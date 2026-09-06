@@ -13,7 +13,7 @@ A browser-based tool that takes a building footprint and roof configuration and 
 - Zone **geometry and classification** for roofs and walls
 - Reporting the parameter `a` and every assumption used to derive it
 - 2D and 3D visualization
-- SVG / DXF export of the zone map
+- PDF export of the user-selected 3D view plus tabular zone data
 
 ### Explicitly out of scope
 
@@ -35,7 +35,7 @@ Client-heavy SPA. All geometry generation and rendering execute in the browser.
 | UI | React or Vue | Form state, validation, layout |
 | 3D | Three.js / React Three Fiber | WebGL, raycasting, camera |
 | Zone engine | Pure TypeScript, zero UI deps | Headless, unit-testable, independently publishable |
-| Export | `svg.js` / `dxf-writer` or equivalent | 2D plan output |
+| Export | `jsPDF` or equivalent | PDF: captured 3D view + zone/area table |
 
 The zone engine must be importable and testable with no DOM. This is the single most important architectural constraint in the document — it is what makes §6 possible.
 
@@ -169,10 +169,10 @@ Rev 1's Phase 2 and 3 are reordered. Complex geometry contains all the hard math
 - Algorithm A: roof zones 1', 1, 2, 3 and wall zones 4, 5
 - 3D view with zones as subdivided meshes
 - Hover tooltips: zone, area, governing dimension
-- **SVG + DXF export of the 2D zone plan** (pulled forward from Rev 1 Phase 3)
+- **PDF export**: the user-selected 3D view plus a tabular zone/area summary (pulled forward from Rev 1 Phase 3, replacing that phase's SVG/DXF plan export — see §10.2)
 - Validation fixture suite green
 
-Ship criterion: a roofing estimator can produce a dimensioned zone plan for a flat-roof rectangle and hand it to a sub.
+Ship criterion: a roofing estimator can produce a zone summary PDF for a flat-roof rectangle and hand it to a sub.
 
 ### Phase 2 — Pitched Roofs
 
@@ -196,7 +196,6 @@ Ship criterion: a roofing estimator can produce a dimensioned zone plan for a fl
 - Stepped-roof interaction rules. ASCE's treatment of step-down turbulence is limited; implementing it means making judgment calls the code does not back. This is a research effort, not a sprint.
 - Wind speed lookup, `q_z`, `GCp`, net pressures
 - Effective wind area and fastener density output
-- PDF report generation
 
 ---
 
@@ -242,3 +241,15 @@ Jumped ahead of the Phase 1→2 roadmap order (§8) to transcribe Fig. 3.2.2d wh
 - Both bands use `a` (wall/steep-roof parameter), not `h` — confirmed by the dimension labels in both sub-figures.
 - Collision clamping (small buildings) follows the same per-axis half-dimension pattern as the low-slope and wall zones, and is covered by fixtures at the 7°, 27°, and 45° pitch-band boundaries.
 - `θ > 45°` and hip/monoslope roofs are not covered by any figure reviewed yet — still throws.
+
+### 10.2 Update — 2026-09-06: Export scope narrowed to PDF only
+
+Decided before any export code was written, so this is a scope change, not a rip-out. Every reference to "SVG / DXF export" or "2D plan output" above (§1, §2, §8 Phase 1) is superseded: the tool exports a **PDF** containing the 3D view the user has framed/selected plus a tabular zone/area summary. No 2D CAD-format export (SVG or DXF) is planned.
+
+Rationale:
+
+- A DXF/SVG plan implies a precision CAD deliverable — a stronger claim than §7's "preliminary, for coordination and takeoff, not for construction, not sealed" positioning wants to make.
+- The ship criterion in §8 ("hand it to a sub") is satisfied by a PDF with a captured view and a dimensioned area table; it doesn't require a 2D-plan renderer or DXF entity/layer conventions.
+- The engine already exposes per-zone polygons and areas, so the PDF path is a canvas screenshot plus a table — materially less surface area to carry through Phase 2 (topology-based zones) and Phase 3 (re-entrant footprints) than a maintained SVG/DXF exporter would be.
+
+If a genuine CAD-import need for DXF surfaces later, it's addable in Phase 3+ once geometry stabilizes.
