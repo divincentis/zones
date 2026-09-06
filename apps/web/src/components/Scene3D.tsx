@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
+import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { ComputationResult } from '../lib/buildModel';
 import type { AnyZoneId } from '../lib/zoneColors';
 import { useZoneColors } from '../lib/zoneColors';
@@ -21,16 +23,33 @@ function sumPieceArea(pieces: { zoneId: string; area: number }[], zoneId: string
 }
 
 /**
- * Canvas's `camera={{ position }}` shorthand does not orient the camera
- * toward the scene — it's created with the default (0,0,-1) forward vector,
- * and only gets pointed at the building once OrbitControls runs its first
- * update. Set it explicitly so the first frame is never blank.
+ * Canvas's `camera={{ position }}` shorthand only applies once, at creation
+ * (react-three-fiber never re-applies it on later renders). Left alone, the
+ * camera stays frozen at the dimensions the building had on first mount, so
+ * resizing the building — especially by a lot — leaves the camera pointed at
+ * a target that jumped away, at a distance/near/far tuned for the old scale.
+ * That's what makes the model hard to find and can clip it entirely (far
+ * plane too close for the new span). Refit the camera imperatively whenever
+ * the building's span or center actually changes.
  */
-function CameraAim({ target }: { target: Vec3 }) {
-  const camera = useThree((state) => state.camera);
+function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
+  const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
+  const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
+
   useEffect(() => {
-    camera.lookAt(...target);
-  }, [camera, target]);
+    camera.position.set(maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1);
+    camera.near = 0.1;
+    camera.far = Math.max(1000, maxSpan * 8);
+    camera.updateProjectionMatrix();
+    camera.lookAt(center[0], center[1], center[2]);
+
+    if (controls) {
+      controls.target.set(center[0], center[1], center[2]);
+      controls.update();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera, controls, maxSpan, center[0], center[1], center[2]]);
+
   return null;
 }
 
@@ -49,8 +68,8 @@ export function Scene3D({ result, onHover, hovered }: Props) {
   ];
 
   return (
-    <Canvas camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40 }}>
-      <CameraAim target={center} />
+    <Canvas camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40, far: Math.max(1000, maxSpan * 8) }}>
+      <CameraRig maxSpan={maxSpan} center={center} />
       <ambientLight intensity={0.65} />
       <directionalLight position={[maxSpan, maxSpan * 1.5, maxSpan]} intensity={1.1} />
       <directionalLight position={[-maxSpan, maxSpan, -maxSpan]} intensity={0.3} />

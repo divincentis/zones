@@ -37,10 +37,8 @@ export function ZoneQuad({ corners, color, hovered, onHoverStart, onHoverEnd }: 
       <meshStandardMaterial
         color={color}
         side={THREE.DoubleSide}
-        opacity={hovered ? 0.95 : 0.75}
-        transparent
         emissive={hovered ? color : '#000000'}
-        emissiveIntensity={hovered ? 0.25 : 0}
+        emissiveIntensity={hovered ? 0.35 : 0}
       />
     </mesh>
   );

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ABasis } from '@zones/engine';
 import type { FormState } from '../lib/buildModel';
 
@@ -32,16 +32,45 @@ function NumberField(props: {
   step?: number;
   onChange: (v: number) => void;
 }) {
+  // Kept as local text so the field can hold an intermediate state (empty,
+  // a bare "-", a trailing ".") while typing. Rounding every keystroke
+  // through the numeric `value` prop is what left a stuck leading zero
+  // behind when the field was cleared: value snapped to 0, the input
+  // re-rendered showing "0", and the next digit typed landed after it.
+  const [text, setText] = useState(String(props.value));
+  const lastEmitted = useRef(props.value);
+
+  useEffect(() => {
+    if (props.value !== lastEmitted.current) {
+      lastEmitted.current = props.value;
+      setText(String(props.value));
+    }
+  }, [props.value]);
+
+  const handleChange = (raw: string) => {
+    setText(raw);
+    const parsed = Number(raw);
+    if (raw.trim() !== '' && !Number.isNaN(parsed)) {
+      lastEmitted.current = parsed;
+      props.onChange(parsed);
+    }
+  };
+
   return (
     <div style={ROW_STYLE}>
       <label style={LABEL_STYLE}>{props.label}</label>
       <input
         type="number"
         style={FIELD_STYLE}
-        value={props.value}
+        value={text}
         min={props.min ?? 0}
         step={props.step ?? 1}
-        onChange={(e) => props.onChange(Number(e.target.value))}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={() => {
+          if (text.trim() === '' || Number.isNaN(Number(text))) {
+            setText(String(props.value));
+          }
+        }}
       />
     </div>
   );
