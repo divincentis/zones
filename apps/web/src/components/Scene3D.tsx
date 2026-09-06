@@ -16,6 +16,7 @@ interface Props {
   result: ComputationResult;
   onHover: (info: HoverInfo | null) => void;
   hovered: HoverInfo | null;
+  onCanvasReady?: (canvas: HTMLCanvasElement) => void;
 }
 
 type Quad = [Vec3, Vec3, Vec3, Vec3];
@@ -196,7 +197,7 @@ function WallCornerDimensions({ result, maxSpan }: { result: ComputationResult; 
   );
 }
 
-export function Scene3D({ result, onHover, hovered }: Props) {
+export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
   const colors = useZoneColors();
   const { building, roof, walls } = result;
 
@@ -211,7 +212,11 @@ export function Scene3D({ result, onHover, hovered }: Props) {
   ];
 
   return (
-    <Canvas camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40, far: Math.max(1000, maxSpan * 8) }}>
+    <Canvas
+      gl={{ preserveDrawingBuffer: true }}
+      onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
+      camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40, far: Math.max(1000, maxSpan * 8) }}
+    >
       <CameraRig maxSpan={maxSpan} center={center} />
       <ambientLight intensity={0.65} />
       <directionalLight position={[maxSpan, maxSpan * 1.5, maxSpan]} intensity={1.1} />

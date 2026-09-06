@@ -6,6 +6,7 @@ import { ZoneLegend } from './components/ZoneLegend';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
+import { exportZonePdf } from './lib/pdfExport';
 
 type ViewMode = '3d' | '2d';
 
@@ -13,6 +14,7 @@ export function App() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM_STATE);
   const [view, setView] = useState<ViewMode>('3d');
   const [hovered, setHovered] = useState<HoverInfo | null>(null);
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
 
   const outcome = useMemo(() => computeZones(form), [form]);
 
@@ -61,11 +63,33 @@ export function App() {
               {mode.toUpperCase()}
             </button>
           ))}
+          {outcome.ok && view === '3d' && (
+            <button
+              onClick={() => canvasEl && exportZonePdf(canvasEl, outcome.result, form)}
+              disabled={!canvasEl}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 4,
+                border: '1px solid var(--border)',
+                background: 'var(--surface-1)',
+                color: 'var(--text-primary)',
+                cursor: canvasEl ? 'pointer' : 'default',
+                opacity: canvasEl ? 1 : 0.5,
+              }}
+            >
+              Export PDF
+            </button>
+          )}
         </div>
 
         {outcome.ok ? (
           view === '3d' ? (
-            <Scene3D result={outcome.result} onHover={setHovered} hovered={hovered} />
+            <Scene3D
+              result={outcome.result}
+              onHover={setHovered}
+              hovered={hovered}
+              onCanvasReady={setCanvasEl}
+            />
           ) : (
             <PlanView2D result={outcome.result} onHover={setHovered} hovered={hovered} />
           )
