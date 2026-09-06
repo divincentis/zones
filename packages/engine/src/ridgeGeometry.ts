@@ -5,26 +5,32 @@ const TOLERANCE_FT = 0.01;
 
 export type RidgeAxis = 'u' | 'v';
 
-export interface GableGeometry {
+export interface RidgeGeometry {
   frame: RectFrame;
   ridgeAxis: RidgeAxis;
-  /** Extent along the ridge direction — the distance between the two rake (gable-end) walls. */
+  /** Extent along the ridge direction — the distance between the two rake (gable-end or hip-end) walls. */
   rakeExtent: number;
   /** Extent perpendicular to the ridge — the distance between the two eave walls. */
   perpExtent: number;
 }
 
 /**
- * Resolves a symmetric gable roof's ridge against the footprint's rectangle
- * frame: which frame axis the ridge is parallel to, and validates the ridge
- * is centered (equal run to both eaves). A single `pitchDegrees` field only
- * describes one slope, so an off-center ridge with the same pitch on both
- * sides would meet at inconsistent heights — that's not representable yet
- * and must fail loudly rather than silently pick a side.
+ * Resolves a symmetric ridge (gable or hip) against the footprint's
+ * rectangle frame: which frame axis the ridge is parallel to, and validates
+ * the ridge is centered (equal run to both eaves). A single `pitchDegrees`
+ * field only describes one slope, so an off-center ridge with the same
+ * pitch on both sides would meet at inconsistent heights — that's not
+ * representable yet and must fail loudly rather than silently pick a side.
+ *
+ * Used for both `roofType: 'gable'` and `roofType: 'hip'`: ridge HEIGHT
+ * depends only on perpendicular span and pitch, not on what happens at the
+ * ends (gabled vs. hipped) — same cross-section either way. Hip-specific
+ * zone geometry (the hip lines themselves) is a separate, not-yet-sourced
+ * concern (see steepRoofZones.ts) and does not live here.
  */
-export function resolveGableGeometry(node: FootprintNode): GableGeometry {
+export function resolveRidgeGeometry(node: FootprintNode): RidgeGeometry {
   if (!node.roof.ridgeLine) {
-    throw new Error(`resolveGableGeometry: roofType "${node.roofType}" requires a ridgeLine`);
+    throw new Error(`resolveRidgeGeometry: roofType "${node.roofType}" requires a ridgeLine`);
   }
   const frame = rectFrame(node.vertices);
   const [r0, r1] = node.roof.ridgeLine;
@@ -32,7 +38,7 @@ export function resolveGableGeometry(node: FootprintNode): GableGeometry {
   const ridgeVec = [r1[0] - r0[0], r1[1] - r0[1]] as const;
   const ridgeLen = Math.hypot(ridgeVec[0], ridgeVec[1]);
   if (ridgeLen < TOLERANCE_FT) {
-    throw new Error('resolveGableGeometry: ridgeLine has zero length');
+    throw new Error('resolveRidgeGeometry: ridgeLine has zero length');
   }
   const ridgeDir = [ridgeVec[0] / ridgeLen, ridgeVec[1] / ridgeLen] as const;
 
@@ -46,7 +52,7 @@ export function resolveGableGeometry(node: FootprintNode): GableGeometry {
     ridgeAxis = 'v';
   } else {
     throw new Error(
-      'resolveGableGeometry: ridgeLine is not parallel to either footprint edge — ' +
+      'resolveRidgeGeometry: ridgeLine is not parallel to either footprint edge — ' +
         'non-axis-aligned ridges are not yet supported'
     );
   }
@@ -70,16 +76,16 @@ export function resolveGableGeometry(node: FootprintNode): GableGeometry {
   const perpCoord1 = ridgeAxis === 'u' ? l1.v : l1.u;
 
   if (Math.abs(perpCoord0 - perpCoord1) > TOLERANCE_FT) {
-    throw new Error('resolveGableGeometry: ridgeLine is not parallel to the footprint edge');
+    throw new Error('resolveRidgeGeometry: ridgeLine is not parallel to the footprint edge');
   }
   const ridgeOffset = perpCoord0;
   const otherEaveDistance = perpExtent - ridgeOffset;
   if (Math.abs(ridgeOffset - otherEaveDistance) > TOLERANCE_FT) {
     throw new Error(
-      `resolveGableGeometry: ridge is off-center (${ridgeOffset.toFixed(2)} ft from one eave, ` +
+      `resolveRidgeGeometry: ridge is off-center (${ridgeOffset.toFixed(2)} ft from one eave, ` +
         `${otherEaveDistance.toFixed(2)} ft from the other) — a single pitchDegrees value can't ` +
         'describe two different-run slopes meeting at a consistent ridge height. Asymmetric ' +
-        'gables are not yet supported.'
+        'ridges are not yet supported.'
     );
   }
 

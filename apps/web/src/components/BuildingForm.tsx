@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import type { ABasis } from '@zones/engine';
-import type { FormState } from '../lib/buildModel';
+import type { ABasis, RoofType } from '@zones/engine';
+import type { FormState, MonoslopeHighSideChoice, RidgeAxisChoice } from '../lib/buildModel';
 
 interface Props {
   form: FormState;
@@ -80,16 +80,101 @@ export function BuildingForm({ form, onChange }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     onChange({ ...form, [key]: value });
 
+  const hasRidge = form.roofType === 'gable' || form.roofType === 'hip';
+  const isMonoslope = form.roofType === 'monoslope';
+  const isFlat = form.roofType === 'flat';
+
   return (
     <div>
       <h2 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-        Building — Low-Slope Rectangle
+        Building — Rectangle
       </h2>
       <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
       <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
       <NumberField label="Eave height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
-      <NumberField label="Parapet height (ft)" value={form.parapetHeight} min={0} onChange={(v) => set('parapetHeight', v)} />
-      <NumberField label="Overhang depth (ft)" value={form.overhangDepth} min={0} onChange={(v) => set('overhangDepth', v)} />
+
+      <div style={ROW_STYLE}>
+        <label style={LABEL_STYLE}>Roof type</label>
+        <select
+          style={FIELD_STYLE}
+          value={form.roofType}
+          onChange={(e) => set('roofType', e.target.value as RoofType)}
+        >
+          <option value="flat">Flat / low-slope (θ ≤ 7°)</option>
+          <option value="gable">Gable</option>
+          <option value="hip">Hip</option>
+          <option value="monoslope">Monoslope</option>
+        </select>
+      </div>
+
+      {hasRidge && (
+        <>
+          <NumberField
+            label="Roof pitch (degrees)"
+            value={form.pitchDegrees}
+            min={0}
+            step={1}
+            onChange={(v) => set('pitchDegrees', v)}
+          />
+          <div style={ROW_STYLE}>
+            <label style={LABEL_STYLE}>Ridge orientation</label>
+            <select
+              style={FIELD_STYLE}
+              value={form.ridgeAlong}
+              onChange={(e) => set('ridgeAlong', e.target.value as RidgeAxisChoice)}
+            >
+              <option value="length">Ridge runs along Length ({form.roofType} ends on the B walls)</option>
+              <option value="width">Ridge runs along Width ({form.roofType} ends on the L walls)</option>
+            </select>
+          </div>
+          <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
+            Overhang and parapet are not yet modeled for {form.roofType} roofs, so those inputs
+            are hidden here. Pitch ≤ 7° falls back to the flat/low-slope algorithm automatically.
+            {form.roofType === 'gable'
+              ? ' Above 45° is out of scope (no source figure yet).'
+              : ' Roof-zone geometry for hip roofs has no sourced figure yet (unlike gable — see scope doc §10.1/§10.3), so computing this building will show an error above 7°; wall zones and mean roof height are still correct.'}
+          </div>
+        </>
+      )}
+
+      {isMonoslope && (
+        <>
+          <NumberField
+            label="Roof pitch (degrees)"
+            value={form.pitchDegrees}
+            min={0}
+            step={1}
+            onChange={(v) => set('pitchDegrees', v)}
+          />
+          <div style={ROW_STYLE}>
+            <label style={LABEL_STYLE}>High side</label>
+            <select
+              style={FIELD_STYLE}
+              value={form.monoslopeHighSide}
+              onChange={(e) => set('monoslopeHighSide', e.target.value as MonoslopeHighSideChoice)}
+            >
+              <option value="lengthNear">High along Length @ B=0</option>
+              <option value="lengthFar">High along Length @ B=width</option>
+              <option value="widthNear">High along Width @ L=0</option>
+              <option value="widthFar">High along Width @ L=length</option>
+            </select>
+          </div>
+          <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
+            Overhang and parapet are not yet modeled for monoslope roofs, so those inputs are
+            hidden here. Pitch ≤ 3° falls back to the flat/low-slope algorithm automatically
+            (FM 1-28 §3.4.1.A). 3°–30° uses Fig. 3.4.1a/b. Above 30° is out of scope (no source
+            figure). Wall zones use a uniform eave height on all four walls — the true high-edge
+            wall and sloped side walls aren&apos;t modeled there yet, only in the 3D envelope shown.
+          </div>
+        </>
+      )}
+
+      {isFlat && (
+        <>
+          <NumberField label="Parapet height (ft)" value={form.parapetHeight} min={0} onChange={(v) => set('parapetHeight', v)} />
+          <NumberField label="Overhang depth (ft)" value={form.overhangDepth} min={0} onChange={(v) => set('overhangDepth', v)} />
+        </>
+      )}
 
       <div style={ROW_STYLE}>
         <label style={LABEL_STYLE}>a-basis (governs L_min for non-rectangular footprints)</label>
@@ -106,3 +191,13 @@ export function BuildingForm({ form, onChange }: Props) {
     </div>
   );
 }
+
+const NOTE_STYLE: CSSProperties = {
+  fontSize: 11,
+  color: 'var(--text-secondary)',
+  background: 'var(--surface-2)',
+  border: '1px solid var(--border)',
+  borderRadius: 4,
+  padding: 8,
+  lineHeight: 1.4,
+};

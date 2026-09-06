@@ -5,5 +5,7 @@ export * from './meanRoofHeight.js';
 export * from './aParameter.js';
 export * from './lowSlopeRoofZones.js';
 export * from './wallZones.js';
-export * from './gableGeometry.js';
+export * from './ridgeGeometry.js';
+export * from './monoslopeGeometry.js';
+export * from './monoslopeRoofZones.js';
 export * from './steepRoofZones.js';

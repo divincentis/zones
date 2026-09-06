@@ -1,6 +1,6 @@
 import type { ABasis, FootprintNode } from './types.js';
 import { localRectToWorld } from './geometry.js';
-import { resolveGableGeometry } from './gableGeometry.js';
+import { resolveRidgeGeometry } from './ridgeGeometry.js';
 import { computeA, type AResult } from './aParameter.js';
 import type { ZonePiece } from './zoneTypes.js';
 
@@ -14,7 +14,7 @@ import type { ZonePiece } from './zoneTypes.js';
  * the rake (gable-end) walls. This module works in local (rake, ridge)
  * coordinates: `rakeCoord` runs from 0 to rakeExtent between the two rakes,
  * `ridgeCoord` runs from 0 to perpExtent between the two eaves, with the
- * ridge centered at perpExtent/2 (resolveGableGeometry enforces centering).
+ * ridge centered at perpExtent/2 (resolveRidgeGeometry enforces centering).
  *
  * Fig. 3.2.2d-1 (7°–27°): Zone 3 sits where the near-ridge band and the
  * near-rake band overlap — i.e. at the two points where the ridge meets a
@@ -73,7 +73,7 @@ export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): Stee
     );
   }
 
-  const { frame, ridgeAxis, rakeExtent, perpExtent } = resolveGableGeometry(node);
+  const { frame, ridgeAxis, rakeExtent, perpExtent } = resolveRidgeGeometry(node);
   const a = computeA(node, aBasis);
 
   const rakeBand = Math.min(a.a, rakeExtent / 2);

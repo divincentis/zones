@@ -1,4 +1,4 @@
-import type { ComputationResult, FormState } from '../lib/buildModel';
+import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult, type FormState } from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
 import { ZONE_LABELS, type AnyZoneId } from '../lib/zoneColors';
 
@@ -55,7 +55,7 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
 
       <h3 style={SECTION_TITLE}>Derived parameters</h3>
       <dl style={DL_STYLE}>
-        <dt>a (wall zones)</dt>
+        <dt>a (wall zones{isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) ? ' + roof bands' : ''})</dt>
         <dd>
           {walls.a.a.toFixed(2)} ft — {walls.a.governingBranch}
         </dd>
@@ -63,20 +63,57 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
         <dd>
           {walls.a.lMin.toFixed(2)} ft ({form.aBasis})
         </dd>
-        <dt>h (roof mean height)</dt>
-        <dd>{roof.h.toFixed(2)} ft</dd>
-        <dt>Zone 1' threshold</dt>
-        <dd>
-          {roof.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min {'>'} 2.4h ={' '}
-          {roof.wideThreshold.toFixed(2)} ft)
-        </dd>
+        {isMonoslopeRoofResult(roof) ? (
+          <>
+            <dt>Pitch band</dt>
+            <dd>{roof.pitchBand}° ({roof.source})</dd>
+            <dt>High band / corner</dt>
+            <dd>{roof.highBand.toFixed(2)} ft / {roof.highCornerBand.toFixed(2)} ft</dd>
+            <dt>{roof.pitchBand === '3-10' ? 'Low band / corner' : 'Wrap band (low + sides)'}</dt>
+            <dd>
+              {roof.lowBand.toFixed(2)} ft
+              {roof.pitchBand === '3-10' ? ` / ${roof.lowCornerBand.toFixed(2)} ft` : ''}
+            </dd>
+          </>
+        ) : isSteepRoofResult(roof) ? (
+          <>
+            <dt>Pitch band</dt>
+            <dd>{roof.pitchBand}° ({roof.source})</dd>
+            <dt>Rake band</dt>
+            <dd>{roof.rakeBand.toFixed(2)} ft</dd>
+            <dt>{roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band</dt>
+            <dd>{roof.ridgeOrEaveBand.toFixed(2)} ft</dd>
+          </>
+        ) : (
+          <>
+            <dt>h (roof mean height)</dt>
+            <dd>{roof.h.toFixed(2)} ft</dd>
+            <dt>Zone 1' threshold</dt>
+            <dd>
+              {roof.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min {'>'} 2.4h ={' '}
+              {roof.wideThreshold.toFixed(2)} ft)
+            </dd>
+          </>
+        )}
       </dl>
 
-      {form.parapetHeight > 0 && (
+      {isMonoslopeRoofResult(roof) ? (
         <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
-          Parapet height ({form.parapetHeight} ft) is recorded but not yet applied to zone
-          geometry — see scope doc §3.3.
+          Overhang and parapet are not yet modeled for monoslope roofs. Wall zones use a uniform
+          eave height on all four walls — see scope doc §10.5.
         </div>
+      ) : isSteepRoofResult(roof) ? (
+        <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
+          Overhang and parapet are not yet modeled for gable roofs — see scope doc §10.1.
+        </div>
+      ) : (
+        form.parapetHeight > 0 && (
+          <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
+            {roof.parapetCreditsCorners
+              ? `Parapet height (${form.parapetHeight} ft) meets the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table 3.2.2a, note 2) — corner areas shown here are Zone 2, not Zone 3.`
+              : `Parapet height (${form.parapetHeight} ft) is below the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table 3.2.2a, note 2) — zone geometry unaffected.`}
+          </div>
+        )
       )}
 
       <h3 style={SECTION_TITLE}>Zone areas</h3>
@@ -94,8 +131,8 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
       </table>
 
       <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
-        Sources: roof zones — FM Global 1-28 Fig. 3.2.2a. Wall zones — a-parameter formula.
-        See scope doc Addendum §10.
+        Sources: roof zones — {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}.
+        Wall zones — a-parameter formula. See scope doc Addendum §10.
       </div>
     </div>
   );

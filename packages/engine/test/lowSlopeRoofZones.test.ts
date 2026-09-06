@@ -131,6 +131,59 @@ describe('computeLowSlopeRoofZones — square footprint', () => {
   });
 });
 
+describe('computeLowSlopeRoofZones — parapet corner credit (Table 3.2.2a, note 2)', () => {
+  // Same 100x80/h=10 building as the first describe block: uncredited Zone 3
+  // = 80, uncredited Zone 2 = 1936. A qualifying parapet folds Zone 3 into
+  // Zone 2 (same total, different split) without touching any other zone.
+  it('below the 3 ft threshold: no change, Zone 3 still 80', () => {
+    const building = flatRoofBuilding({ length: 100, width: 80, eaveHeight: 10, parapetHeight: 2.9 });
+    const result = computeLowSlopeRoofZones(building, 'boundingRect');
+    expect(result.parapetCreditsCorners).toBe(false);
+    expect(sumArea(result.pieces, '3')).toBeCloseTo(80);
+    expect(sumArea(result.pieces, '2')).toBeCloseTo(1936);
+  });
+
+  it('at exactly 3 ft (boundary — "minimum height of 3 ft" is inclusive): credit applies', () => {
+    const building = flatRoofBuilding({ length: 100, width: 80, eaveHeight: 10, parapetHeight: 3 });
+    const result = computeLowSlopeRoofZones(building, 'boundingRect');
+    expect(result.parapetCreditsCorners).toBe(true);
+    expect(sumArea(result.pieces, '3')).toBeCloseTo(0);
+    expect(sumArea(result.pieces, '2')).toBeCloseTo(1936 + 80);
+  });
+
+  it('above the threshold: credit applies, same as exactly at threshold', () => {
+    const building = flatRoofBuilding({ length: 100, width: 80, eaveHeight: 10, parapetHeight: 6 });
+    const result = computeLowSlopeRoofZones(building, 'boundingRect');
+    expect(result.parapetCreditsCorners).toBe(true);
+    expect(sumArea(result.pieces, '3')).toBeCloseTo(0);
+    expect(sumArea(result.pieces, '2')).toBeCloseTo(2016);
+  });
+
+  it('credit does not change Zone 1/1\' or the total footprint area', () => {
+    const uncredited = computeLowSlopeRoofZones(
+      flatRoofBuilding({ length: 100, width: 80, eaveHeight: 10, parapetHeight: 0 }),
+      'boundingRect'
+    );
+    const credited = computeLowSlopeRoofZones(
+      flatRoofBuilding({ length: 100, width: 80, eaveHeight: 10, parapetHeight: 5 }),
+      'boundingRect'
+    );
+    expect(sumArea(credited.pieces, '1')).toBeCloseTo(sumArea(uncredited.pieces, '1'));
+    expect(sumArea(credited.pieces, "1'")).toBeCloseTo(sumArea(uncredited.pieces, "1'"));
+    const totalUncredited =
+      sumArea(uncredited.pieces, '1') +
+      sumArea(uncredited.pieces, "1'") +
+      sumArea(uncredited.pieces, '2') +
+      sumArea(uncredited.pieces, '3');
+    const totalCredited =
+      sumArea(credited.pieces, '1') +
+      sumArea(credited.pieces, "1'") +
+      sumArea(credited.pieces, '2') +
+      sumArea(credited.pieces, '3');
+    expect(totalCredited).toBeCloseTo(totalUncredited);
+  });
+});
+
 describe('computeLowSlopeRoofZones — pitch guard', () => {
   it('throws for roof slopes above 7 degrees (Algorithm B / Phase 2 territory)', () => {
     const building = flatRoofBuilding({ length: 60, width: 40, eaveHeight: 12 });

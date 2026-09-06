@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import type { ComputationResult, FormState } from './buildModel';
+import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult, type FormState } from './buildModel';
 import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
 
 const PRELIMINARY_NOTICE =
@@ -48,13 +48,35 @@ export function exportZonePdf(
   doc.text('Building & derived parameters', margin, y);
   y += 16;
   doc.setFontSize(9);
-  const paramLines = [
-    `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft`,
-    `Parapet height: ${form.parapetHeight} ft   Overhang depth: ${form.overhangDepth} ft`,
-    `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
-    `L_min: ${result.walls.a.lMin.toFixed(2)} ft   h (roof mean height): ${result.roof.h.toFixed(2)} ft`,
-    `Zone 1': ${result.roof.hasZone1Prime ? 'applies' : 'does not apply'} (threshold L_min > 2.4h = ${result.roof.wideThreshold.toFixed(2)} ft)`,
-  ];
+  const roof = result.roof;
+  const paramLines = isMonoslopeRoofResult(roof)
+    ? [
+        `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (monoslope, high side: ${form.monoslopeHighSide})`,
+        `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
+        `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
+        `High band/corner: ${roof.highBand.toFixed(2)}/${roof.highCornerBand.toFixed(2)} ft   ${roof.pitchBand === '3-10' ? `Low band/corner: ${roof.lowBand.toFixed(2)}/${roof.lowCornerBand.toFixed(2)} ft` : `Wrap band: ${roof.lowBand.toFixed(2)} ft`}`,
+        'Overhang and parapet are not yet modeled for monoslope roofs; wall zones use a uniform eave height on all four walls.',
+      ]
+    : isSteepRoofResult(roof)
+      ? [
+          `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (gable, ridge along ${form.ridgeAlong})`,
+          `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
+          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
+          `Rake band: ${roof.rakeBand.toFixed(2)} ft   ${roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band: ${roof.ridgeOrEaveBand.toFixed(2)} ft`,
+          'Overhang and parapet are not yet modeled for gable roofs.',
+        ]
+      : [
+          `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft`,
+          `Parapet height: ${form.parapetHeight} ft   Overhang depth: ${form.overhangDepth} ft`,
+          `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
+          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   h (roof mean height): ${roof.h.toFixed(2)} ft`,
+          `Zone 1': ${roof.hasZone1Prime ? 'applies' : 'does not apply'} (threshold L_min > 2.4h = ${roof.wideThreshold.toFixed(2)} ft)`,
+          roof.parapetCreditsCorners
+            ? "Parapet >= 3 ft on the full perimeter: Zone 3 corners credited to Zone 2 (FM 1-28 Table 3.2.2a, note 2)."
+            : form.parapetHeight > 0
+              ? 'Parapet below 3 ft: no Zone 3-to-Zone 2 corner credit (FM 1-28 Table 3.2.2a, note 2).'
+              : undefined,
+        ].filter((line): line is string => line !== undefined);
   for (const line of paramLines) {
     doc.text(line, margin, y);
     y += 13;
@@ -85,7 +107,8 @@ export function exportZonePdf(
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    'Sources: roof zones — FM Global 1-28 Fig. 3.2.2a/d. Wall zones — a-parameter formula. See project scope doc Addendum §10.',
+    `Sources: roof zones — ${isMonoslopeRoofResult(roof) || isSteepRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}. ` +
+      'Wall zones — a-parameter formula. See project scope doc Addendum §10.',
     margin,
     y,
     { maxWidth: pageWidth - margin * 2 }

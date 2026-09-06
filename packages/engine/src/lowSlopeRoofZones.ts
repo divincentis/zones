@@ -21,9 +21,21 @@ import type { ZonePiece } from './zoneTypes.js';
  *   Zone 1': applies only to buildings with least horizontal dimension > 2.4h;
  *            covers the area beyond 1.2h. Absent that threshold, Zone 1
  *            simply continues to the building's center.
+ *
+ * Parapet corner credit (Table 3.2.2a, note 2, p.21): "If a parapet with a
+ * minimum height of 3 ft (0.9 m) is provided around the entire perimeter,
+ * Zone 2 values for GCP may be used in Zone 3." `parapetHeight` is a single
+ * scalar applied uniformly to the whole building (no per-edge parapet in the
+ * data model), so "around the entire perimeter" is automatically satisfied
+ * whenever it's set at all — there's no partial-perimeter case to represent.
+ * No equivalent footnote exists on Tables 3.2.2b/c/d (steep gable), so this
+ * credit is scoped to the low-slope algorithm only.
  */
 
 export type LowSlopeRoofZoneId = '1' | "1'" | '2' | '3';
+
+/** FM 1-28 Table 3.2.2a, note 2 (p.21): minimum parapet height for the Zone 3→2 corner credit. */
+export const PARAPET_CORNER_CREDIT_THRESHOLD_FT = 3;
 
 export interface LowSlopeRoofZoneResult {
   pieces: ZonePiece[];
@@ -35,6 +47,8 @@ export interface LowSlopeRoofZoneResult {
   hasZone1Prime: boolean;
   roofLength: number; // plan dimension including overhang, along frame.u
   roofWidth: number; // plan dimension including overhang, along frame.v
+  /** True if parapetHeight >= 3 ft — Zone 3 corners are credited to Zone 2 (Table 3.2.2a, note 2). */
+  parapetCreditsCorners: boolean;
   source: 'FM Global 1-28 Fig 3.2.2a';
 }
 
@@ -90,6 +104,9 @@ export function computeLowSlopeRoofZones(
   const dY = Math.min(dEdge, roofWidth / 2);
   const legW = Math.min(nominalLegWidth, dX, dY);
 
+  const parapetCreditsCorners = node.roof.parapetHeight >= PARAPET_CORNER_CREDIT_THRESHOLD_FT;
+  const cornerZoneId: LowSlopeRoofZoneId = parapetCreditsCorners ? '2' : '3';
+
   const pieces: ZonePiece[] = [];
 
   const addPiece = (zoneId: LowSlopeRoofZoneId, b: Bounds) => {
@@ -127,7 +144,7 @@ export function computeLowSlopeRoofZones(
     const yFarHi = Math.max(yLegEdge, yFar);
 
     // Leg along the X edge (hugging top/bottom), thickness legW in Y.
-    addPiece('3', {
+    addPiece(cornerZoneId, {
       xMin: Math.min(xNear, xFar),
       xMax: Math.max(xNear, xFar),
       yMin: yLo,
@@ -135,7 +152,7 @@ export function computeLowSlopeRoofZones(
     });
     // Leg along the Y edge (hugging left/right), thickness legW in X,
     // trimmed to exclude the tip already covered by the X-leg above.
-    addPiece('3', {
+    addPiece(cornerZoneId, {
       xMin: xLo,
       xMax: xHi,
       yMin: yFarLo,
@@ -193,6 +210,7 @@ export function computeLowSlopeRoofZones(
     hasZone1Prime,
     roofLength,
     roofWidth,
+    parapetCreditsCorners,
     source: 'FM Global 1-28 Fig 3.2.2a',
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeSteepRoofZones } from '../src/steepRoofZones.js';
 import { meanRoofHeight } from '../src/meanRoofHeight.js';
 import { sumArea } from '../src/zoneTypes.js';
-import { gableRoofBuilding } from './fixtures.js';
+import { gableRoofBuilding, hipRoofBuilding, monoslopeRoofBuilding } from './fixtures.js';
 
 // Hand-calculated against FM 1-28 Fig. 3.2.2d-1 / d-2. Building: length=100
 // (rake extent, ridge runs along length), width=40 (perpExtent, ridge
@@ -161,5 +161,63 @@ describe('computeSteepRoofZones — ridge along the width axis', () => {
     expect(sumArea(result.pieces, '3')).toBeCloseTo(64);
     expect(sumArea(result.pieces, '2')).toBeCloseTo(992);
     expect(sumArea(result.pieces, '1')).toBeCloseTo(2944);
+  });
+});
+
+describe('computeSteepRoofZones — very small building, rake and ridge bands both clamp', () => {
+  // length=width=4 -> rakeExtent=perpExtent=4, so half-extent=2 < a's 3ft
+  // floor. Both rakeBand and ridgeOrEaveBand clamp to 2, and ridgeNear
+  // ([ridgeCenter-2, ridgeCenter+2]) spans the full perpExtent (0-4), so
+  // every "away from ridge"/"field" piece degenerates to zero width and
+  // only the two Zone 3 ridge-x-rake corners survive, fully tiling the roof.
+  const building = gableRoofBuilding({
+    length: 4,
+    width: 4,
+    eaveHeight: 3,
+    pitchDegrees: 20,
+    ridgeAlong: 'length',
+  });
+  const result = computeSteepRoofZones(building, 'boundingRect');
+
+  it('a floors at 3, bands clamp to half the (4ft) extents', () => {
+    expect(result.a.a).toBeCloseTo(3);
+    expect(result.a.governingBranch).toBe('3ft floor');
+    expect(result.rakeBand).toBeCloseTo(2);
+    expect(result.ridgeOrEaveBand).toBeCloseTo(2);
+  });
+
+  it('Zone 3 alone fully tiles the 4x4=16 roof, no Zone 1 or Zone 2', () => {
+    expect(sumArea(result.pieces, '3')).toBeCloseTo(16);
+    expect(sumArea(result.pieces, '2')).toBeCloseTo(0);
+    expect(sumArea(result.pieces, '1')).toBeCloseTo(0);
+  });
+});
+
+describe('computeSteepRoofZones — hip and monoslope still not implemented', () => {
+  // Mean roof height and wall zones are now resolvable for both (see
+  // wallZones.test.ts), but roof-ZONE geometry for hip and monoslope has no
+  // sourced figure yet — this must keep throwing rather than reusing the
+  // gable figure, which scope §4.2 notes is a distinct figure for hip and
+  // doesn't apply to monoslope's asymmetric single slope at all.
+  it('rejects hip even with a valid ridgeLine', () => {
+    const building = hipRoofBuilding({
+      length: 100,
+      width: 40,
+      eaveHeight: 10,
+      pitchDegrees: 20,
+      ridgeAlong: 'length',
+    });
+    expect(() => computeSteepRoofZones(building, 'boundingRect')).toThrow(/gable only/);
+  });
+
+  it('rejects monoslope even with a valid highEdge', () => {
+    const building = monoslopeRoofBuilding({
+      length: 100,
+      width: 40,
+      eaveHeight: 10,
+      pitchDegrees: 20,
+      highSide: 'lengthFar',
+    });
+    expect(() => computeSteepRoofZones(building, 'boundingRect')).toThrow(/gable only/);
   });
 });

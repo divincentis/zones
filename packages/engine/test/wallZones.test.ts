@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeWallZones } from '../src/wallZones.js';
-import { flatRoofBuilding } from './fixtures.js';
+import { flatRoofBuilding, hipRoofBuilding, monoslopeRoofBuilding } from './fixtures.js';
 
 describe('computeWallZones', () => {
   // L=60, W=40, h=20 -> Lmin=40: 0.1*40=4, 0.4*20=8 -> a=4 (0.1*Lmin governs;
@@ -68,5 +68,37 @@ describe('computeWallZones — short wall where corner strips collide', () => {
       expect(p.alongMax - p.alongMin).toBeCloseTo(2);
     }
     expect(shortWallPieces).toHaveLength(4); // 2 strips each on 2 short walls
+  });
+});
+
+describe('computeWallZones — hip and monoslope (wall zones don\'t depend on roof-zone figures)', () => {
+  // Wall zones only need `a`, which only needs mean roof height `h` — both
+  // now resolvable for hip (via ridgeGeometry.ts) and monoslope (via
+  // monoslopeGeometry.ts) even though their roof-zone figures aren't
+  // sourced yet (steepRoofZones.ts still throws for both roofTypes).
+  it('computes wall zones for a hip building given a valid ridgeLine', () => {
+    const building = hipRoofBuilding({
+      length: 100,
+      width: 40,
+      eaveHeight: 10,
+      pitchDegrees: 20,
+      ridgeAlong: 'length',
+    });
+    const result = computeWallZones(building, 'boundingRect');
+    const total = result.pieces.reduce((s, p) => s + p.area, 0);
+    expect(total).toBeCloseTo(2 * (100 + 40) * 10);
+  });
+
+  it('computes wall zones for a monoslope building given a valid highEdge', () => {
+    const building = monoslopeRoofBuilding({
+      length: 100,
+      width: 40,
+      eaveHeight: 10,
+      pitchDegrees: 20,
+      highSide: 'lengthFar',
+    });
+    const result = computeWallZones(building, 'boundingRect');
+    const total = result.pieces.reduce((s, p) => s + p.area, 0);
+    expect(total).toBeCloseTo(2 * (100 + 40) * 10);
   });
 });

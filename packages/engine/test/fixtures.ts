@@ -57,6 +57,66 @@ export function gableRoofBuilding(opts: {
   };
 }
 
+/** Same ridge construction as gableRoofBuilding, but roofType: 'hip' — ridge-height math is shared (see ridgeGeometry.ts); hip-specific zone geometry is not yet implemented. */
+export function hipRoofBuilding(opts: {
+  length: number;
+  width: number;
+  eaveHeight: number;
+  pitchDegrees: number;
+  ridgeAlong: 'length' | 'width';
+}): FootprintNode {
+  const building = gableRoofBuilding(opts);
+  building.roofType = 'hip';
+  return building;
+}
+
+/**
+ * Monoslope building: single high edge, one of the footprint's own four
+ * edges. `highSide: 'lengthNear'` puts the high edge at v=0 (the length-
+ * direction edge nearest the origin); `'lengthFar'` at v=width; `'widthNear'`
+ * at u=0; `'widthFar'` at u=length.
+ */
+export function monoslopeRoofBuilding(opts: {
+  length: number;
+  width: number;
+  eaveHeight: number;
+  pitchDegrees: number;
+  highSide: 'lengthNear' | 'lengthFar' | 'widthNear' | 'widthFar';
+}): FootprintNode {
+  const highEdge: [Vec2, Vec2] =
+    opts.highSide === 'lengthNear'
+      ? [
+          [0, 0],
+          [opts.length, 0],
+        ]
+      : opts.highSide === 'lengthFar'
+        ? [
+            [0, opts.width],
+            [opts.length, opts.width],
+          ]
+        : opts.highSide === 'widthNear'
+          ? [
+              [0, 0],
+              [0, opts.width],
+            ]
+          : [
+              [opts.length, 0],
+              [opts.length, opts.width],
+            ];
+  return {
+    id: 'test',
+    vertices: rectangle(opts.length, opts.width),
+    eaveHeight: opts.eaveHeight,
+    roofType: 'monoslope',
+    roof: {
+      highEdge,
+      pitchDegrees: opts.pitchDegrees,
+      overhangDepth: 0,
+      parapetHeight: 0,
+    },
+  };
+}
+
 export function flatRoofBuilding(opts: {
   length: number;
   width: number;

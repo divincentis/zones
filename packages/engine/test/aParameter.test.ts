@@ -67,10 +67,41 @@ describe('computeA — branch coverage (scope §4.1, §6)', () => {
     expect(() => computeA(building, 'boundingRect')).toThrow(/ridgeLine/);
   });
 
-  it('throws rather than guessing mean roof height above 10° for hip (not yet implemented)', () => {
+  it('throws rather than guessing mean roof height above 10° for hip without a ridgeLine', () => {
     const building = flatRoofBuilding({ length: 100, width: 60, eaveHeight: 12 });
     building.roofType = 'hip';
     building.roof.pitchDegrees = 10.0001;
-    expect(() => computeA(building, 'boundingRect')).toThrow(/not yet/);
+    expect(() => computeA(building, 'boundingRect')).toThrow(/ridgeLine/);
+  });
+
+  it('hip shares gable\'s ridge-height formula given a valid centered ridgeLine', () => {
+    const building = flatRoofBuilding({ length: 100, width: 60, eaveHeight: 12 });
+    building.roofType = 'hip';
+    building.roof.pitchDegrees = 20;
+    building.roof.ridgeLine = [
+      [0, 30],
+      [100, 30],
+    ];
+    const rise = 30 * Math.tan((20 * Math.PI) / 180);
+    expect(computeA(building, 'boundingRect').h).toBeCloseTo(12 + rise / 2, 6);
+  });
+
+  it('throws rather than guessing mean roof height above 10° for monoslope without a highEdge', () => {
+    const building = flatRoofBuilding({ length: 100, width: 60, eaveHeight: 12 });
+    building.roofType = 'monoslope';
+    building.roof.pitchDegrees = 10.0001;
+    expect(() => computeA(building, 'boundingRect')).toThrow(/highEdge/);
+  });
+
+  it('monoslope mean height rises across the full span, no mirroring', () => {
+    const building = flatRoofBuilding({ length: 100, width: 60, eaveHeight: 12 });
+    building.roofType = 'monoslope';
+    building.roof.pitchDegrees = 20;
+    building.roof.highEdge = [
+      [0, 60],
+      [100, 60],
+    ];
+    const rise = 60 * Math.tan((20 * Math.PI) / 180);
+    expect(computeA(building, 'boundingRect').h).toBeCloseTo(12 + rise / 2, 6);
   });
 });

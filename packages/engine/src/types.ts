@@ -10,6 +10,12 @@ export type RoofType = 'flat' | 'gable' | 'hip' | 'monoslope';
 export interface RoofPlane {
   /** Required for gable/hip; defines eave vs. rake edges. Undefined for flat/monoslope. */
   ridgeLine?: readonly [Vec2, Vec2];
+  /**
+   * Required for monoslope; the footprint's own wall-face edge that is the
+   * HIGH side of the single slope (the opposite edge is the low eave, at
+   * `eaveHeight`). Undefined for flat/gable/hip.
+   */
+  highEdge?: readonly [Vec2, Vec2];
   /** Canonical pitch representation. */
   pitchDegrees: number;
   /** x:12 convenience, derived from pitchDegrees. Display only — never read by the engine. */
