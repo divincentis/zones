@@ -1,0 +1,17 @@
+{
+  "name": "@zones/engine",
+  "version": "0.1.0",
+  "description": "ASCE 7-22 Components & Cladding wind zone geometry engine. Pure TypeScript, zero UI dependencies, headless and independently testable.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

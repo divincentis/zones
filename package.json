@@ -1,0 +1,12 @@
+{
+  "name": "asce-wind-zone-visualizer",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspace=packages/engine",
+    "build": "npm run build --workspace=packages/engine"
+  }
+}
