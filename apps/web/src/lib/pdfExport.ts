@@ -36,11 +36,11 @@ export function exportZonePdf(
   doc.text(PRELIMINARY_NOTICE, margin, 64, { maxWidth: pageWidth - margin * 2 });
   doc.setTextColor(0, 0, 0);
 
-  const imgData = canvas.toDataURL('image/png');
+  const imgData = canvas.toDataURL('image/jpeg', 0.85);
   const imgW = pageWidth - margin * 2;
   const imgH = imgW * (canvas.height / canvas.width);
   const imgY = 92;
-  doc.addImage(imgData, 'PNG', margin, imgY, imgW, imgH);
+  doc.addImage(imgData, 'JPEG', margin, imgY, imgW, imgH);
 
   let y = imgY + imgH + 28;
 
