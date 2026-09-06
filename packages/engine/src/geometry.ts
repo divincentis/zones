@@ -174,6 +174,24 @@ export function rectFrame(vertices: Vec2[]): RectFrame {
   return { origin: p0, u, v, length, width };
 }
 
+/** Maps a local (u, v) coordinate against a RectFrame to a world-space point. */
+export function localToWorld(frame: RectFrame, u: number, v: number): Vec2 {
+  return [
+    frame.origin[0] + u * frame.u[0] + v * frame.v[0],
+    frame.origin[1] + u * frame.u[1] + v * frame.v[1],
+  ];
+}
+
+/** Inverse of localToWorld: projects a world-space point onto a RectFrame's local (u, v) axes. */
+export function worldToLocal(frame: RectFrame, p: Vec2): { u: number; v: number } {
+  const dx = p[0] - frame.origin[0];
+  const dy = p[1] - frame.origin[1];
+  return {
+    u: dx * frame.u[0] + dy * frame.u[1],
+    v: dx * frame.v[0] + dy * frame.v[1],
+  };
+}
+
 export function localRectToWorld(
   frame: RectFrame,
   xMin: number,
@@ -181,12 +199,13 @@ export function localRectToWorld(
   yMin: number,
   yMax: number
 ): Vec2[] {
-  const corner = (x: number, y: number): Vec2 => [
-    frame.origin[0] + x * frame.u[0] + y * frame.v[0],
-    frame.origin[1] + x * frame.u[1] + y * frame.v[1],
-  ];
   // CCW: (xMin,yMin) -> (xMax,yMin) -> (xMax,yMax) -> (xMin,yMax)
-  return [corner(xMin, yMin), corner(xMax, yMin), corner(xMax, yMax), corner(xMin, yMax)];
+  return [
+    localToWorld(frame, xMin, yMin),
+    localToWorld(frame, xMax, yMin),
+    localToWorld(frame, xMax, yMax),
+    localToWorld(frame, xMin, yMax),
+  ];
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { FootprintNode } from './types.js';
-import { rectFrame, type RectFrame } from './geometry.js';
+import { rectFrame, worldToLocal, type RectFrame } from './geometry.js';
 
 const TOLERANCE_FT = 0.01;
 
@@ -31,16 +31,8 @@ export function resolveMonoslopeGeometry(node: FootprintNode): MonoslopeGeometry
   const frame = rectFrame(node.vertices);
   const [h0, h1] = node.roof.highEdge;
 
-  const toLocal = (p: readonly [number, number]) => {
-    const dx = p[0] - frame.origin[0];
-    const dy = p[1] - frame.origin[1];
-    return {
-      u: dx * frame.u[0] + dy * frame.u[1],
-      v: dx * frame.v[0] + dy * frame.v[1],
-    };
-  };
-  const l0 = toLocal(h0);
-  const l1 = toLocal(h1);
+  const l0 = worldToLocal(frame, h0);
+  const l1 = worldToLocal(frame, h1);
 
   const uConstant = Math.abs(l0.u - l1.u) < TOLERANCE_FT;
   const vConstant = Math.abs(l0.v - l1.v) < TOLERANCE_FT;

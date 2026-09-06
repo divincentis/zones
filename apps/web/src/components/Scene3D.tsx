@@ -3,7 +3,15 @@ import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Html } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { localRectToWorld, resolveMonoslopeGeometry, resolveRidgeGeometry, type RectFrame, type Vec2 } from '@zones/engine';
+import {
+  localRectToWorld,
+  localToWorld,
+  resolveMonoslopeGeometry,
+  resolveRidgeGeometry,
+  worldToLocal,
+  type RectFrame,
+  type Vec2,
+} from '@zones/engine';
 import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult } from '../lib/buildModel';
 import type { AnyZoneId } from '../lib/zoneColors';
 import { useZoneColors } from '../lib/zoneColors';
@@ -126,14 +134,8 @@ function SteepRoofDimensions({ result, maxSpan }: { result: ComputationResult; m
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
   const { frame, ridgeAxis } = resolveRidgeGeometry(building);
 
-  const toWorld = (rakeCoord: number, ridgeCoord: number): Vec2 => {
-    const u = ridgeAxis === 'u' ? rakeCoord : ridgeCoord;
-    const v = ridgeAxis === 'u' ? ridgeCoord : rakeCoord;
-    return [
-      frame.origin[0] + u * frame.u[0] + v * frame.v[0],
-      frame.origin[1] + u * frame.u[1] + v * frame.v[1],
-    ];
-  };
+  const toWorld = (rakeCoord: number, ridgeCoord: number): Vec2 =>
+    ridgeAxis === 'u' ? localToWorld(frame, rakeCoord, ridgeCoord) : localToWorld(frame, ridgeCoord, rakeCoord);
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
   const at = (rakeCoord: number, ridgeCoord: number): Vec3 => planToWorld(toWorld(rakeCoord, ridgeCoord), y);
@@ -166,12 +168,7 @@ function MonoslopeRoofDimensions({ result, maxSpan }: { result: ComputationResul
   // Local (x, y): x = distance from the high edge, y = ridge-parallel position.
   const toWorld = (x: number, y: number): Vec2 => {
     const alongSlope = highSide === 'near' ? x : slopeExtent - x;
-    const u = slopeAxis === 'u' ? alongSlope : y;
-    const v = slopeAxis === 'u' ? y : alongSlope;
-    return [
-      frame.origin[0] + u * frame.u[0] + v * frame.v[0],
-      frame.origin[1] + u * frame.u[1] + v * frame.v[1],
-    ];
+    return slopeAxis === 'u' ? localToWorld(frame, alongSlope, y) : localToWorld(frame, y, alongSlope);
   };
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
@@ -248,20 +245,21 @@ function MonoslopeEnvelopeInfill({ building }: { building: ComputationResult['bu
 
   return (
     <group>
-      {highRect.length === 4 && <EnvelopeQuad corners={highRect as Quad} />}
+      {highRect.length === 4 && <EnvelopeMesh corners={highRect} />}
       {sideTriangles.map((corners, i) => (
-        <EnvelopeTriangle key={i} corners={corners} />
+        <EnvelopeMesh key={i} corners={corners} />
       ))}
     </group>
   );
 }
 
-function EnvelopeQuad({ corners }: { corners: Quad }) {
+/** Cosmetic envelope-fill mesh (gable-end / monoslope infill) — a triangle (3 corners) or a planar quad (4, split 0-1-2/0-2-3), always in the same flat neutral gray with no hover interaction. */
+function EnvelopeMesh({ corners }: { corners: Vec3[] }) {
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(corners.flat());
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    geo.setIndex(corners.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2]);
     geo.computeVertexNormals();
     return geo;
   }, [corners]);
@@ -313,7 +311,7 @@ function GableEndInfill({ building }: { building: ComputationResult['building'] 
           t.apex
         );
         const corners = gableEndTriangle(t.start, t.end, building.eaveHeight, t.apex, apexHeight);
-        return <EnvelopeTriangle key={i} corners={corners} />;
+        return <EnvelopeMesh key={i} corners={corners} />;
       })}
     </group>
   );
@@ -335,12 +333,7 @@ function splitGableRoofPiece(
   ridgeAxis: 'u' | 'v',
   perpExtent: number
 ): { zoneId: string; vertices: Vec2[] }[] {
-  const toLocal = (p: Vec2) => {
-    const dx = p[0] - frame.origin[0];
-    const dy = p[1] - frame.origin[1];
-    return { u: dx * frame.u[0] + dy * frame.u[1], v: dx * frame.v[0] + dy * frame.v[1] };
-  };
-  const locals = piece.vertices.map(toLocal);
+  const locals = piece.vertices.map((p) => worldToLocal(frame, p));
   const uMin = Math.min(...locals.map((l) => l.u));
   const uMax = Math.max(...locals.map((l) => l.u));
   const vMin = Math.min(...locals.map((l) => l.v));
@@ -366,23 +359,6 @@ function splitGableRoofPiece(
   }
 
   return [{ zoneId: piece.zoneId, vertices: piece.vertices }];
-}
-
-function EnvelopeTriangle({ corners }: { corners: Vec3[] }) {
-  const geometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(corners.flat());
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setIndex([0, 1, 2]);
-    geo.computeVertexNormals();
-    return geo;
-  }, [corners]);
-
-  return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial color="#8a8a8a" side={THREE.DoubleSide} />
-    </mesh>
-  );
 }
 
 /** Wall Zone 5 corner-strip width `a`, dimensioned along both walls meeting at each footprint corner. */

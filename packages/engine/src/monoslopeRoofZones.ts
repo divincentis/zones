@@ -2,7 +2,7 @@ import type { ABasis, FootprintNode } from './types.js';
 import { localRectToWorld } from './geometry.js';
 import { resolveMonoslopeGeometry } from './monoslopeGeometry.js';
 import { computeA, type AResult } from './aParameter.js';
-import type { ZonePiece } from './zoneTypes.js';
+import { isDegenerateRect, rectArea, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Monoslope roof zone geometry, per FM Global 1-28 §3.4.1 and
@@ -63,11 +63,11 @@ interface Bounds {
 }
 
 function boundsArea(b: Bounds): number {
-  return Math.max(0, b.xMax - b.xMin) * Math.max(0, b.yMax - b.yMin);
+  return rectArea(b.xMin, b.xMax, b.yMin, b.yMax);
 }
 
 function isDegenerate(b: Bounds, tol = 1e-9): boolean {
-  return b.xMax - b.xMin <= tol || b.yMax - b.yMin <= tol;
+  return isDegenerateRect(b.xMin, b.xMax, b.yMin, b.yMax, tol);
 }
 
 export function computeMonoslopeRoofZones(

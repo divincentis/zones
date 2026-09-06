@@ -1,5 +1,5 @@
 import type { FootprintNode } from './types.js';
-import { distance, rectFrame, type RectFrame } from './geometry.js';
+import { distance, rectFrame, worldToLocal, type RectFrame } from './geometry.js';
 
 const TOLERANCE_FT = 0.01;
 
@@ -62,16 +62,8 @@ export function resolveRidgeGeometry(node: FootprintNode): RidgeGeometry {
 
   // Project ridge endpoints onto the perpendicular axis to find its offset
   // from the two eave walls, and confirm it spans the full rake extent.
-  const toLocal = (p: readonly [number, number]) => {
-    const dx = p[0] - frame.origin[0];
-    const dy = p[1] - frame.origin[1];
-    return {
-      u: dx * frame.u[0] + dy * frame.u[1],
-      v: dx * frame.v[0] + dy * frame.v[1],
-    };
-  };
-  const l0 = toLocal(r0);
-  const l1 = toLocal(r1);
+  const l0 = worldToLocal(frame, r0);
+  const l1 = worldToLocal(frame, r1);
   const perpCoord0 = ridgeAxis === 'u' ? l0.v : l0.u;
   const perpCoord1 = ridgeAxis === 'u' ? l1.v : l1.u;
 

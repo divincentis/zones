@@ -2,7 +2,7 @@ import type { ABasis, FootprintNode } from './types.js';
 import { localRectToWorld } from './geometry.js';
 import { resolveRidgeGeometry } from './ridgeGeometry.js';
 import { computeA, type AResult } from './aParameter.js';
-import type { ZonePiece } from './zoneTypes.js';
+import { isDegenerateRect, rectArea, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Gable roof zone geometry, θ > 7°, per FM Global 1-28 Fig. 3.2.2d-1
@@ -52,11 +52,11 @@ interface Bounds {
 }
 
 function boundsArea(b: Bounds): number {
-  return Math.max(0, b.rakeMax - b.rakeMin) * Math.max(0, b.ridgeMax - b.ridgeMin);
+  return rectArea(b.rakeMin, b.rakeMax, b.ridgeMin, b.ridgeMax);
 }
 
 function isDegenerate(b: Bounds, tol = 1e-9): boolean {
-  return b.rakeMax - b.rakeMin <= tol || b.ridgeMax - b.ridgeMin <= tol;
+  return isDegenerateRect(b.rakeMin, b.rakeMax, b.ridgeMin, b.ridgeMax, tol);
 }
 
 export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): SteepRoofZoneResult {
