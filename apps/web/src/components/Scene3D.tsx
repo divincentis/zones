@@ -812,6 +812,7 @@ function CornerLabel({ position, color, text }: { position: Vec3; color: string;
     <Html position={position} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
       <div
         ref={labelRef}
+        data-pdf-dim-label="true"
         style={{
           background: 'rgba(12,12,16,0.92)',
           color: '#fff',

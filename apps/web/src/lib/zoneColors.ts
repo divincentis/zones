@@ -29,7 +29,8 @@ const CSS_VAR_BY_ZONE: Record<AnyZoneId, string> = {
   '5': '--zone-5',
 };
 
-function readZoneHexes(): Record<AnyZoneId, string> {
+/** Zone hex colors read from the page's current CSS custom properties (theme.css), light or dark. */
+export function readZoneHexes(): Record<AnyZoneId, string> {
   const style = getComputedStyle(document.documentElement);
   const entries = (Object.keys(CSS_VAR_BY_ZONE) as AnyZoneId[]).map((zoneId) => [
     zoneId,

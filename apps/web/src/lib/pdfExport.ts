@@ -6,7 +6,7 @@ import {
   type ComputationResult,
   type FormState,
 } from './buildModel';
-import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
+import { readZoneHexes, ZONE_LABELS, type AnyZoneId } from './zoneColors';
 import { computeZoneWidths } from './zoneWidths';
 
 const PRELIMINARY_NOTICE =
@@ -25,6 +25,61 @@ function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: 
       return { zoneId, area };
     })
     .filter((z) => z.area > 0);
+}
+
+/**
+ * The 3D viewport's dimension labels are DOM elements (drei's `Html`)
+ * layered over the WebGL canvas via CSS, not pixels drawn into the canvas
+ * itself — only the tick-mark lines are real WebGL geometry. So a raw
+ * `canvas.toDataURL()` silently drops every dimension's text. Read the
+ * labels currently on screen back out of the DOM and paint them onto the
+ * flattened canvas at their projected position, matching their live styles
+ * so this stays in sync with any future style change to the labels.
+ */
+function drawDimensionLabels(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement): void {
+  const canvasRect = canvas.getBoundingClientRect();
+  if (canvasRect.width === 0 || canvasRect.height === 0) return;
+  const scaleX = canvas.width / canvasRect.width;
+  const scaleY = canvas.height / canvasRect.height;
+
+  const labels = document.querySelectorAll<HTMLElement>('[data-pdf-dim-label]');
+  labels.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    // Zero-size labels are hidden/not currently laid out — nothing to draw.
+    if (r.width === 0 || r.height === 0) return;
+
+    const style = getComputedStyle(el);
+    const x = (r.left - canvasRect.left) * scaleX;
+    const y = (r.top - canvasRect.top) * scaleY;
+    const w = r.width * scaleX;
+    const h = r.height * scaleY;
+    const radius = Math.min(3 * scaleX, w / 2, h / 2);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+    ctx.fillStyle = style.backgroundColor || 'rgba(12,12,16,0.92)';
+    ctx.fill();
+    ctx.clip();
+
+    const borderWidth = (parseFloat(style.borderLeftWidth) || 3) * scaleX;
+    ctx.fillStyle = style.borderLeftColor || '#333333';
+    ctx.fillRect(x, y, borderWidth, h);
+
+    const fontSize = (parseFloat(style.fontSize) || 12) * scaleY;
+    ctx.fillStyle = style.color || '#ffffff';
+    ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const paddingLeft = (parseFloat(style.paddingLeft) || 7) * scaleX;
+    ctx.fillText(el.textContent ?? '', x + borderWidth + paddingLeft, y + h / 2 + 1);
+    ctx.restore();
+  });
 }
 
 /** PDF export: the user-framed 3D view plus a tabular zone/area summary (scope §8 Phase 1, §10.2). */
@@ -67,6 +122,7 @@ export function exportZonePdf(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, flattened.width, flattened.height);
   ctx.drawImage(canvas, 0, 0);
+  drawDimensionLabels(ctx, canvas);
   const imgData = flattened.toDataURL('image/jpeg', 0.85);
   const imgW = pageWidth - margin * 2;
   const imgH = imgW * (canvas.height / canvas.width);
@@ -145,6 +201,9 @@ export function exportZonePdf(
   const areas = zoneAreas(result);
   const widths = computeZoneWidths(result, boardSize);
   const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  const zoneHexes = readZoneHexes();
+  const swatchSize = 8;
+  const labelX = margin + swatchSize + 6;
   if (boardSize && boardSize > 0) {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
@@ -159,7 +218,9 @@ export function exportZonePdf(
       doc.addPage();
       y = margin;
     }
-    doc.text(ZONE_LABELS[zoneId], margin, y);
+    doc.setFillColor(zoneHexes[zoneId]);
+    doc.rect(margin, y - swatchSize + 2, swatchSize, swatchSize, 'F');
+    doc.text(ZONE_LABELS[zoneId], labelX, y);
     doc.text(`${area.toFixed(1)} ft²`, valueX, y);
     y += 12;
 
