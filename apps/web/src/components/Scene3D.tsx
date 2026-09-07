@@ -168,6 +168,13 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
   const zone1PrimeLength = Math.max(0, roofMaxX - roofMinX - 2 * dIntX);
   const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
+  // On small buildings the inner bands can collapse entirely — Zone 1
+  // vanishes when the 0.6h edge bands meet at the center, and Zone 2 can
+  // vanish in turn when the corner legs consume the whole perimeter. Gate
+  // each band's call-out on the *next* zone in still existing, since a
+  // dimension for a boundary nothing sits on either side of isn't useful.
+  const zone1Exists = roof.pieces.some((p) => p.zoneId === '1' || p.zoneId === "1'");
+  const zone2Exists = roof.pieces.some((p) => p.zoneId === '2');
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
@@ -203,7 +210,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
 
   return (
     <group>
-      {zone3Exists && legW > 1e-6 && (
+      {zone3Exists && zone2Exists && legW > 1e-6 && (
         <>
           <DimensionLine
             from={at(nearX, nearY + (dirY * legW) / 2)}
@@ -219,35 +226,38 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
           />
         </>
       )}
-      <DimensionLine
-        from={at(bandX, nearY)}
-        to={at(bandX, nearY + dirY * dEdgeY)}
-        label={`Zone 2 width = 0.6h = ${dEdgeY.toFixed(2)} ft`}
-        color={AMBER}
-      />
-      {roof.hasZone1Prime ? (
-        <>
-          <DimensionLine
-            from={at(interiorX, roofMinY + dIntY)}
-            to={at(interiorX, roofMaxY - dIntY)}
-            label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
-            color={BLUE}
-          />
-          <DimensionLine
-            from={at(roofMinX + dIntX, lengthRowY)}
-            to={at(roofMaxX - dIntX, lengthRowY)}
-            label={`Zone 1' length = ${zone1PrimeLength.toFixed(2)} ft`}
-            color={BLUE}
-          />
-        </>
-      ) : (
+      {zone1Exists && (
         <DimensionLine
-          from={at(interiorX, roofMinY + dEdgeY)}
-          to={at(interiorX, roofMaxY - dEdgeY)}
-          label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
-          color={BLUE}
+          from={at(bandX, nearY)}
+          to={at(bandX, nearY + dirY * dEdgeY)}
+          label={`Zone 2 width = 0.6h = ${dEdgeY.toFixed(2)} ft`}
+          color={AMBER}
         />
       )}
+      {zone1Exists &&
+        (roof.hasZone1Prime ? (
+          <>
+            <DimensionLine
+              from={at(interiorX, roofMinY + dIntY)}
+              to={at(interiorX, roofMaxY - dIntY)}
+              label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
+              color={BLUE}
+            />
+            <DimensionLine
+              from={at(roofMinX + dIntX, lengthRowY)}
+              to={at(roofMaxX - dIntX, lengthRowY)}
+              label={`Zone 1' length = ${zone1PrimeLength.toFixed(2)} ft`}
+              color={BLUE}
+            />
+          </>
+        ) : (
+          <DimensionLine
+            from={at(interiorX, roofMinY + dEdgeY)}
+            to={at(interiorX, roofMaxY - dEdgeY)}
+            label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
+            color={BLUE}
+          />
+        ))}
     </group>
   );
 }
