@@ -177,13 +177,13 @@ Ship criterion: a roofing estimator can produce a zone summary PDF for a flat-ro
 ### Phase 2 — Pitched Roofs
 
 - Ridge line input and derivation
-- Algorithm B for gable and hip, all pitch bands
-- Monoslope
+- Algorithm B for gable and hip, all pitch bands — **gable and monoslope done (§10.1, §10.5); hip deferred indefinitely, no source (§10.5, §10.8)**
+- Monoslope — done (§10.5)
 - Overhang zone strips
 - Zone geometry projected onto sloped planes
 - Fixtures extended to every band boundary
 
-### Phase 3 — Complex Footprints
+### Phase 3 — Complex Footprints — **deferred indefinitely, may never be implemented (§10.8)**
 
 - 2D vertex editor
 - Straight-skeleton inward offsetting for non-convex polygons (re-entrant corners break naive vector scaling)
@@ -316,3 +316,12 @@ A new file appeared under `docs/reference/`: a saved copy of the GAF building-sc
 - **Corroborates a choice already made, though.** Our zone-ID types (`LowSlopeRoofZoneId`, `SteepRoofZoneId`, `MonoslopeRoofZoneId` — all `'1' | '2' | '3'` (+ `1'` low-slope only), no `2e`/`2r`/`3e` suffixes) already match the simplified 3-zone ASCE 7-22 scheme this doc describes, even though the actual figures transcribed are FM 1-28's. No rename needed.
 - **Stepped-roof diagrams are relevant to the Parking Lot item** ("stepped-roof interaction rules," §8) if that ever gets picked up — same L-shaped-corner idea we already implement for low-slope Zone 3 (§10 addendum) turns out to be the general modern-ASCE pattern, not an FM-specific quirk. Still parked; no action taken.
 - **Schema: confirmed still good, no changes made.** `RoofType` already includes `'hip'` (`types.ts`); `RoofPlane`'s `ridgeLine`/`pitchDegrees` model is already roofType-agnostic per §10.4 (hip reuses gable's ridge-height formula); zone-ID unions already use the unsuffixed scheme. Whenever a real hip source shows up, it plugs into the existing shape — no `FootprintNode`/`RoofPlane`/`BuildingModel` rework anticipated.
+
+### 10.8 Update — 2026-09-07: Hip roof zones and Phase 3 deferred indefinitely
+
+User decision, not a technical finding: both remaining open items are deferred and may never be implemented.
+
+- **Hip roof-zone geometry** (§10.5's confirmed source gap). `computeSteepRoofZones` keeps throwing `"roofType \"hip\" is not yet supported (gable only)"`; the UI keeps its existing honest error panel for the case. No further searching for a source is planned unless the user raises it again.
+- **Phase 3 — Complex Footprints** (§8): 2D vertex editor, straight-skeleton offsetting for re-entrant polygons, `aBasis` selection UI, multi-structure adjacency detection. None of this is scheduled.
+- Everything shipped through §10.7 plus the stepped/abutting-zone work (FM 1-28 Fig. 3.2.2b/c, merged to `main` just before this decision) stands as the tool's functional ceiling for the foreseeable future: flat, gable, and monoslope roofs end-to-end, wall zones for all roof types including hip/monoslope (§10.4), parapet corner credit, and stepped/abutting-building zone treatment.
+- Not a scope-boundary change (§1 is untouched) — just a prioritization call. If either item is picked back up later, §10.5 (hip) and §8 Phase 3 (complex footprints) still describe exactly what's missing and why.
