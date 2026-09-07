@@ -1,4 +1,7 @@
 node_modules/
+# Worktrees symlink node_modules back to the main checkout; a symlink is not a
+# directory, so the trailing-slash pattern above does not match it.
+node_modules
 dist/
 *.log
 .DS_Store
