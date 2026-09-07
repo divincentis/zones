@@ -152,12 +152,16 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const dEdgeX = Math.min(roof.dEdge, (roofMaxX - roofMinX) / 2);
   const dEdgeY = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
   const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
+  const dIntX = Math.min(roof.dInterior, (roofMaxX - roofMinX) / 2);
   const dIntY = Math.min(roof.dInterior, (roofMaxY - roofMinY) / 2);
-  // When Zone 1' exists, it's the field beyond both 1.2h interior boundaries
-  // — that's the span this dimension needs to report. When it doesn't, Zone
-  // 1 itself continues all the way in from the 0.6h edge band (there's no
-  // further inset), so the span to report is bounded by dEdgeY, not dIntY.
+  // When Zone 1' exists, it's a rectangular field beyond both 1.2h interior
+  // boundaries — a plan shape, not a band, so a foreman needs both its
+  // length and width to lay it out (they aren't equal unless the roof is
+  // square). When it doesn't, Zone 1 itself continues all the way in from
+  // the 0.6h edge band on every side (there's no further inset), so it's
+  // still effectively a band and one width call-out is enough.
   const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
+  const zone1PrimeLength = Math.max(0, roofMaxX - roofMinX - 2 * dIntX);
   const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
@@ -183,30 +187,54 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const midX = (roofMinX + roofMaxX) / 2;
   const bandX = clampX(midX - gap / 2);
   const interiorX = clampX(midX + gap / 2);
+  // Zone 1' length's row is offset away from dead-center so its label
+  // doesn't land on top of the width dimension's label — both would
+  // otherwise sit at almost the same point, since the width line's own
+  // midpoint (at interiorX) is only "gap" away from true center.
+  const lengthRowY = Math.min(roofMaxY - dIntY, roofMinY + dIntY + zone1PrimeWidth * 0.75);
+  // Leg-length tick sits just past the leg-width one so the two don't
+  // overlap, but never past the corner square's own edge.
+  const legLenOffset = Math.min(legW * 2.2, dEdgeY * 0.9);
 
   return (
     <group>
       {zone3Exists && legW > 1e-6 && (
-        <DimensionLine
-          from={at(nearX, nearY + (dirY * legW) / 2)}
-          to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-          label={`0.2h leg = ${legW.toFixed(2)} ft`}
-          color={AMBER}
-        />
+        <>
+          <DimensionLine
+            from={at(nearX, nearY + (dirY * legW) / 2)}
+            to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
+            label={`Zone 3 leg width = 0.2h = ${legW.toFixed(2)} ft`}
+            color={AMBER}
+          />
+          <DimensionLine
+            from={at(nearX, nearY + dirY * legLenOffset)}
+            to={at(nearX + dirX * dEdgeX, nearY + dirY * legLenOffset)}
+            label={`Zone 3 leg length = 0.6h = ${dEdgeX.toFixed(2)} ft`}
+            color={AMBER}
+          />
+        </>
       )}
       <DimensionLine
         from={at(bandX, nearY)}
         to={at(bandX, nearY + dirY * dEdgeY)}
-        label={`0.6h band = ${dEdgeY.toFixed(2)} ft`}
+        label={`Zone 2 width = 0.6h = ${dEdgeY.toFixed(2)} ft`}
         color={AMBER}
       />
       {roof.hasZone1Prime ? (
-        <DimensionLine
-          from={at(interiorX, roofMinY + dIntY)}
-          to={at(interiorX, roofMaxY - dIntY)}
-          label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
-          color={BLUE}
-        />
+        <>
+          <DimensionLine
+            from={at(interiorX, roofMinY + dIntY)}
+            to={at(interiorX, roofMaxY - dIntY)}
+            label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
+            color={BLUE}
+          />
+          <DimensionLine
+            from={at(roofMinX + dIntX, lengthRowY)}
+            to={at(roofMaxX - dIntX, lengthRowY)}
+            label={`Zone 1' length = ${zone1PrimeLength.toFixed(2)} ft`}
+            color={BLUE}
+          />
+        </>
       ) : (
         <DimensionLine
           from={at(interiorX, roofMinY + dEdgeY)}
@@ -223,7 +251,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
 function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
   const { building, roof } = result;
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
-  const { frame, ridgeAxis } = resolveRidgeGeometry(building);
+  const { frame, ridgeAxis, perpExtent } = resolveRidgeGeometry(building);
 
   // The footprint frame's u/v axes always align with world x/y for this
   // app's axis-aligned rectangles (see rectFrame), so the camera-facing
@@ -247,22 +275,41 @@ function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationR
   // fan out from a single point, which put their labels on top of each
   // other from some camera angles. Scaled to the viewport (not just the
   // band widths) so the separation actually reads regardless of angle.
-  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.06);
+  // Two different offsets (not one shared "gap") so the two labels' anchor
+  // points land clearly apart — with a single shared offset both dimensions'
+  // midpoints sit almost on top of each other near the corner and their
+  // pill labels overlap illegibly from most camera angles.
+  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.03);
+  const gap2 = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.09);
+  // At 7°-27°, Zone 3 sits centered on the ridge, not at the true corner
+  // (see steepRoofZones.ts) — its across-ridge width is the full 2a straddling
+  // the ridge centerline, not the a-from-corner span the old single dimension
+  // showed (which measured empty Zone 2 near the corner, not Zone 3 at all).
+  const ridgeCenter = perpExtent / 2;
 
   return (
     <group>
       <DimensionLine
         from={at(0, gap)}
         to={at(roof.rakeBand, gap)}
-        label={`a (rake band) = ${roof.rakeBand.toFixed(2)} ft`}
+        label={`Zone 2/3 depth (from rake) = a = ${roof.rakeBand.toFixed(2)} ft`}
         color={AMBER}
       />
-      <DimensionLine
-        from={at(gap, 0)}
-        to={at(gap, roof.ridgeOrEaveBand)}
-        label={`a (${roof.pitchBand === '7-27' ? 'ridge' : 'eave'} band) = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
-        color={BLUE}
-      />
+      {roof.pitchBand === '7-27' ? (
+        <DimensionLine
+          from={at(gap2, ridgeCenter - roof.ridgeOrEaveBand)}
+          to={at(gap2, ridgeCenter + roof.ridgeOrEaveBand)}
+          label={`Zone 3 width (straddles ridge) = 2a = ${(2 * roof.ridgeOrEaveBand).toFixed(2)} ft`}
+          color={BLUE}
+        />
+      ) : (
+        <DimensionLine
+          from={at(gap2, 0)}
+          to={at(gap2, roof.ridgeOrEaveBand)}
+          label={`Zone 3 width (from eave) = a = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
+          color={BLUE}
+        />
+      )}
     </group>
   );
 }
@@ -292,25 +339,46 @@ function MonoslopeRoofDimensions({ result, maxSpan, facing }: { result: Computat
   const at = (x: number, ridgeCoord: number): Vec3 =>
     planToWorld(toWorld(x, nearRidgeCoord + dirRidge * ridgeCoord), y);
 
-  // Nudge each line off the shared corner along the other axis so their
-  // labels don't land on top of each other from some camera angles. Scaled
-  // to the viewport so the separation reads regardless of angle.
-  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.06);
+  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.03);
+  const lowGap = Math.min(roof.lowBand, roof.lowCornerBand || roof.lowBand, maxSpan * 0.06);
+  // The depth dimension's row is pushed past the corner square entirely
+  // (rather than nudged by a small multiplier) so it lands in the open
+  // Zone 2' field beyond, clear of the width dimension's column regardless
+  // of viewing angle — this roof is often viewed nearly edge-on to its
+  // high wall, which can flatten small offsets down to nothing on screen.
+  const depthRow = Math.min(roof.highCornerBand + gap, ridgeParallelExtent / 2);
 
   return (
     <group>
       <DimensionLine
         from={at(gap, 0)}
         to={at(gap, roof.highCornerBand)}
-        label={`4a (high corner) = ${roof.highCornerBand.toFixed(2)} ft`}
+        label={`Zone 3 width (high corner) = 4a = ${roof.highCornerBand.toFixed(2)} ft`}
         color={AMBER}
       />
       <DimensionLine
-        from={at(0, gap)}
-        to={at(roof.highBand, gap)}
-        label={`2a (high band) = ${roof.highBand.toFixed(2)} ft`}
+        from={at(0, depthRow)}
+        to={at(roof.highBand, depthRow)}
+        label={`Zone 2/3 depth (high side) = 2a = ${roof.highBand.toFixed(2)} ft`}
         color={BLUE}
       />
+      {/* Drawn at mid-edge (not near the corner) so it can't overlap the
+          low-corner dimension below — a small offset from the corner isn't
+          reliable here since this roof is often viewed nearly edge-on. */}
+      <DimensionLine
+        from={at(slopeExtent - roof.lowBand, ridgeParallelExtent / 2)}
+        to={at(slopeExtent, ridgeParallelExtent / 2)}
+        label={`Zone 2 depth (low side) = a = ${roof.lowBand.toFixed(2)} ft`}
+        color={AMBER}
+      />
+      {roof.lowCornerBand > 1e-6 && (
+        <DimensionLine
+          from={at(slopeExtent - roof.lowCornerBand, lowGap)}
+          to={at(slopeExtent, lowGap)}
+          label={`Zone 3 low corner (square) = 2a = ${roof.lowCornerBand.toFixed(2)} ft each side`}
+          color={BLUE}
+        />
+      )}
     </group>
   );
 }
