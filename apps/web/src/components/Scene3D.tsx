@@ -35,12 +35,15 @@ import {
 import { ZoneQuad } from './ZoneQuad';
 import { DimensionLine } from './Dimension3D';
 import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
+import { fmtWidth } from '../lib/zoneWidths';
 
 interface Props {
   result: ComputationResult;
   onHover: (info: HoverInfo | null) => void;
   hovered: HoverInfo | null;
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+  /** Board width (ft) to round zone-width call-outs up to, mirroring the "Zone areas" table. null/undefined = off. */
+  boardSize?: number | null;
 }
 
 type Quad = [Vec3, Vec3, Vec3, Vec3];
@@ -144,7 +147,17 @@ function FacingTracker({ center, onChange }: { center: Vec3; onChange: (facing: 
  * corner to Zone 2, at which point the leg/far-corner split inside that
  * corner square is no longer a real zone boundary.
  */
-function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
+function RoofDimensions({
+  result,
+  maxSpan,
+  facing,
+  boardSize,
+}: {
+  result: ComputationResult;
+  maxSpan: number;
+  facing: Facing;
+  boardSize?: number | null;
+}) {
   const { building, roof } = result;
   if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || isSteppedRoofResult(roof)) return null;
   const roofXs = roof.pieces.flatMap((p) => p.vertices.map((v) => v[0]));
@@ -217,7 +230,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
           <DimensionLine
             from={at(nearX, nearY + (dirY * legW) / 2)}
             to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-            label={`Zone 3 leg width = 0.2h = ${legW.toFixed(2)} ft`}
+            label={`Zone 3 leg width = 0.2h = ${fmtWidth(legW, boardSize ?? undefined)}`}
             color={AMBER}
           />
           <DimensionLine
@@ -232,7 +245,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
         <DimensionLine
           from={at(bandX, nearY)}
           to={at(bandX, nearY + dirY * dEdgeY)}
-          label={`Zone 2 width = 0.6h = ${dEdgeY.toFixed(2)} ft`}
+          label={`Zone 2 width = 0.6h = ${fmtWidth(dEdgeY, boardSize ?? undefined)}`}
           color={AMBER}
         />
       )}
@@ -242,13 +255,13 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
             <DimensionLine
               from={at(interiorX, roofMinY + dIntY)}
               to={at(interiorX, roofMaxY - dIntY)}
-              label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
+              label={`Zone 1' width = ${fmtWidth(zone1PrimeWidth, boardSize ?? undefined)}`}
               color={BLUE}
             />
             <DimensionLine
               from={at(roofMinX + dIntX, lengthRowY)}
               to={at(roofMaxX - dIntX, lengthRowY)}
-              label={`Zone 1' length = ${zone1PrimeLength.toFixed(2)} ft`}
+              label={`Zone 1' length = ${fmtWidth(zone1PrimeLength, boardSize ?? undefined)}`}
               color={BLUE}
             />
           </>
@@ -256,7 +269,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
           <DimensionLine
             from={at(interiorX, roofMinY + dEdgeY)}
             to={at(interiorX, roofMaxY - dEdgeY)}
-            label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
+            label={`Zone 1 width = ${fmtWidth(zone1Width, boardSize ?? undefined)}`}
             color={BLUE}
           />
         ))}
@@ -265,7 +278,17 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
 }
 
 /** Gable roof band widths — rake band and ridge/eave band, both `a` — dimensioned off one rake corner. Both are plan dimensions, so drawn at a fixed height just above the eave line rather than on the sloped surface (mirrors the flat-roof RoofDimensions treatment). */
-function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
+function SteepRoofDimensions({
+  result,
+  maxSpan,
+  facing,
+  boardSize,
+}: {
+  result: ComputationResult;
+  maxSpan: number;
+  facing: Facing;
+  boardSize?: number | null;
+}) {
   const { building, roof } = result;
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
   const { frame, ridgeAxis, perpExtent } = resolveRidgeGeometry(building);
@@ -309,21 +332,21 @@ function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationR
       <DimensionLine
         from={at(0, gap)}
         to={at(roof.rakeBand, gap)}
-        label={`Zone 2/3 depth (from rake) = a = ${roof.rakeBand.toFixed(2)} ft`}
+        label={`Zone 2/3 depth (from rake) = a = ${fmtWidth(roof.rakeBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       {roof.pitchBand === '7-27' ? (
         <DimensionLine
           from={at(gap2, ridgeCenter - roof.ridgeOrEaveBand)}
           to={at(gap2, ridgeCenter + roof.ridgeOrEaveBand)}
-          label={`Zone 3 width (straddles ridge) = 2a = ${(2 * roof.ridgeOrEaveBand).toFixed(2)} ft`}
+          label={`Zone 3 width (straddles ridge) = 2a = ${fmtWidth(2 * roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       ) : (
         <DimensionLine
           from={at(gap2, 0)}
           to={at(gap2, roof.ridgeOrEaveBand)}
-          label={`Zone 3 width (from eave) = a = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
+          label={`Zone 3 width (from eave) = a = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       )}
@@ -332,7 +355,17 @@ function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationR
 }
 
 /** Monoslope band widths — high band/corner and low band/corner (or wrap band above 10°), both `a`-multiples — dimensioned off one corner, at a fixed height above the low eave (plan dimensions, not on the sloped surface). */
-function MonoslopeRoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
+function MonoslopeRoofDimensions({
+  result,
+  maxSpan,
+  facing,
+  boardSize,
+}: {
+  result: ComputationResult;
+  maxSpan: number;
+  facing: Facing;
+  boardSize?: number | null;
+}) {
   const { building, roof } = result;
   if (!isMonoslopeRoofResult(roof) || !building.roof.highEdge) return null;
   const { frame, slopeAxis, highSide } = resolveMonoslopeGeometry(building);
@@ -370,13 +403,13 @@ function MonoslopeRoofDimensions({ result, maxSpan, facing }: { result: Computat
       <DimensionLine
         from={at(gap, 0)}
         to={at(gap, roof.highCornerBand)}
-        label={`Zone 3 width (high corner) = 4a = ${roof.highCornerBand.toFixed(2)} ft`}
+        label={`Zone 3 width (high corner) = 4a = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       <DimensionLine
         from={at(0, depthRow)}
         to={at(roof.highBand, depthRow)}
-        label={`Zone 2/3 depth (high side) = 2a = ${roof.highBand.toFixed(2)} ft`}
+        label={`Zone 2/3 depth (high side) = 2a = ${fmtWidth(roof.highBand, boardSize ?? undefined)}`}
         color={BLUE}
       />
       {/* Drawn at mid-edge (not near the corner) so it can't overlap the
@@ -385,14 +418,14 @@ function MonoslopeRoofDimensions({ result, maxSpan, facing }: { result: Computat
       <DimensionLine
         from={at(slopeExtent - roof.lowBand, ridgeParallelExtent / 2)}
         to={at(slopeExtent, ridgeParallelExtent / 2)}
-        label={`Zone 2 depth (low side) = a = ${roof.lowBand.toFixed(2)} ft`}
+        label={`Zone 2 depth (low side) = a = ${fmtWidth(roof.lowBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       {roof.lowCornerBand > 1e-6 && (
         <DimensionLine
           from={at(slopeExtent - roof.lowCornerBand, lowGap)}
           to={at(slopeExtent, lowGap)}
-          label={`Zone 3 low corner (square) = 2a = ${roof.lowCornerBand.toFixed(2)} ft each side`}
+          label={`Zone 3 low corner (square) = 2a = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined)} each side`}
           color={BLUE}
         />
       )}
@@ -411,10 +444,12 @@ function SteppedRoofDimensions({
   result,
   maxSpan,
   facing,
+  boardSize,
 }: {
   result: ComputationResult;
   maxSpan: number;
   facing: Facing;
+  boardSize?: number | null;
 }) {
   const { building, roof, step } = result;
   if (!isSteppedRoofResult(roof) || !step) return null;
@@ -471,14 +506,14 @@ function SteppedRoofDimensions({
             <DimensionLine
               from={at(bandX, nearY)}
               to={at(bandX, nearY + dirY * dEdgeY)}
-              label={`Zone 2 width (${target.name}) = 0.6h = ${dEdgeY.toFixed(2)} ft`}
+              label={`Zone 2 width (${target.name}) = 0.6h = ${fmtWidth(dEdgeY, boardSize ?? undefined)}`}
               color={AMBER}
             />
             {legW > 1e-6 && (
               <DimensionLine
                 from={at(nearX, nearY + (dirY * legW) / 2)}
                 to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-                label={`Zone 3 leg width = 0.2h = ${legW.toFixed(2)} ft`}
+                label={`Zone 3 leg width = 0.2h = ${fmtWidth(legW, boardSize ?? undefined)}`}
                 color={BLUE}
               />
             )}
@@ -862,7 +897,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   );
 }
 
-export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
+export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: Props) {
   const colors = useZoneColors();
   const { building, roof, walls, step } = result;
   const isSteep = isSteepRoofResult(roof);
@@ -998,13 +1033,13 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
 
       <LabelCollisionProvider>
         {isSteep ? (
-          <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+          <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} boardSize={boardSize} />
         ) : isMonoslope ? (
-          <MonoslopeRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+          <MonoslopeRoofDimensions result={result} maxSpan={maxSpan} facing={facing} boardSize={boardSize} />
         ) : isStepped ? (
-          <SteppedRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+          <SteppedRoofDimensions result={result} maxSpan={maxSpan} facing={facing} boardSize={boardSize} />
         ) : (
-          <RoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+          <RoofDimensions result={result} maxSpan={maxSpan} facing={facing} boardSize={boardSize} />
         )}
         <WallCornerDimensions building={building} walls={walls} maxSpan={maxSpan} facing={facing} />
         {step && (

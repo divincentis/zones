@@ -94,6 +94,7 @@ export function App() {
               onHover={setHovered}
               hovered={hovered}
               onCanvasReady={setCanvasEl}
+              boardSize={boardSize}
             />
           ) : (
             <PlanView2D result={outcome.result} onHover={setHovered} hovered={hovered} />

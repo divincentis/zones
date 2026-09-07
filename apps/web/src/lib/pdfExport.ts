@@ -148,7 +148,7 @@ export function exportZonePdf(
   if (boardSize && boardSize > 0) {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
-    doc.text(`Widths rounded up to ${boardSize} ft boards where shown ("exact → rounded").`, margin, y);
+    doc.text(`Widths rounded up to ${boardSize} ft boards where shown (exact width shown as a minimum).`, margin, y);
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     y += 14;
