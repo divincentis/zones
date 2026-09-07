@@ -7,6 +7,7 @@ import {
   type FormState,
 } from './buildModel';
 import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
+import { computeZoneWidths } from './zoneWidths';
 
 const PRELIMINARY_NOTICE =
   'Preliminary — for coordination and takeoff. Not for construction. Not sealed. ' +
@@ -55,7 +56,17 @@ export function exportZonePdf(
   doc.text(PRELIMINARY_NOTICE, margin, noticeY, { maxWidth: pageWidth - margin * 2 });
   doc.setTextColor(0, 0, 0);
 
-  const imgData = canvas.toDataURL('image/jpeg', 0.85);
+  // The 3D viewport's WebGL canvas has a transparent background; JPEG has no
+  // alpha channel, so encoding it directly turns the transparent areas black.
+  // Flatten onto a white backing canvas first so the PDF page reads as white.
+  const flattened = document.createElement('canvas');
+  flattened.width = canvas.width;
+  flattened.height = canvas.height;
+  const ctx = flattened.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, flattened.width, flattened.height);
+  ctx.drawImage(canvas, 0, 0);
+  const imgData = flattened.toDataURL('image/jpeg', 0.85);
   const imgW = pageWidth - margin * 2;
   const imgH = imgW * (canvas.height / canvas.width);
   const imgY = noticeY + 28;
@@ -131,6 +142,8 @@ export function exportZonePdf(
   y += 16;
   doc.setFontSize(9);
   const areas = zoneAreas(result);
+  const widths = computeZoneWidths(result);
+  const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
   const valueX = margin + 160;
   for (const { zoneId, area } of areas) {
     if (y > pageHeight - margin) {
@@ -139,7 +152,26 @@ export function exportZonePdf(
     }
     doc.text(ZONE_LABELS[zoneId], margin, y);
     doc.text(`${area.toFixed(1)} ft²`, valueX, y);
-    y += 14;
+    y += 12;
+
+    const width = widths[zoneId];
+    const detailParts = [
+      width?.width && `Width ${width.width}`,
+      hasLegLength && width?.legLength && `Leg length ${width.legLength}`,
+    ].filter(Boolean);
+    if (detailParts.length > 0) {
+      if (y > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(detailParts.join('  ·  '), margin + 14, y);
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      y += 12;
+    }
+    y += 4;
   }
 
   y += 14;
