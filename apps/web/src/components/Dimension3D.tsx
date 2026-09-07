@@ -54,6 +54,7 @@ export function DimensionLine({ from, to, label, color = '#333333' }: DimensionL
         <Html position={mid} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
           <div
             ref={labelRef}
+            data-pdf-dim-label="true"
             style={{
               background: 'rgba(12,12,16,0.92)',
               color: '#fff',
