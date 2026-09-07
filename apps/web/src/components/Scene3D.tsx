@@ -34,6 +34,7 @@ import {
 } from '../lib/vec3';
 import { ZoneQuad } from './ZoneQuad';
 import { DimensionLine } from './Dimension3D';
+import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
 
 interface Props {
   result: ComputationResult;
@@ -672,14 +673,12 @@ function splitGableRoofPiece<P extends { zoneId: string; vertices: Vec2[] }>(
 
 /**
  * Wall Zone 5 corner-strip width `a`, dimensioned along both walls meeting
- * at each footprint corner. Drawn at ground level for the (up to 3)
- * corners visible from the current camera side; the one corner diagonally
- * opposite the camera is fully occluded by the building's own bulk at that
- * height, so its dimension is raised above the roofline instead. That raise
- * clears the roof from most angles, but not every one — so it's also drawn
- * `occludable`, letting it hide naturally on the rare angle where the
- * building still sits between it and the camera, rather than showing
- * through.
+ * at each footprint corner. Drawn at ground level for the (up to 3) corners
+ * visible from the current camera side; the one corner diagonally opposite
+ * the camera is fully occluded by the building's own bulk at that height, so
+ * it's skipped rather than floated above the roofline — the other corners
+ * already establish `a`, and the raised version used to read as a stray
+ * label hovering over the building.
  */
 function WallCornerDimensions({
   building,
@@ -713,13 +712,16 @@ function WallCornerDimensions({
   const farY = facing.sy > 0 ? Math.min(...ys) : Math.max(...ys);
 
   const dimY = Math.max(0.5, maxSpan * 0.015);
-  const raisedY = building.eaveHeight + Math.max(3, maxSpan * 0.2);
   const wallOffset = Math.max(1.5, maxSpan * 0.02);
   const labelOffset = Math.max(2, maxSpan * 0.032);
+  const at = (p: Vec2): Vec3 => planToWorld(p, dimY);
 
   return (
     <group>
       {vertices.map((v, k) => {
+        const isFarCorner = Math.abs(v[0] - farX) < 1e-6 && Math.abs(v[1] - farY) < 1e-6;
+        if (isFarCorner) return null;
+
         const inIdx = (k - 1 + n) % n;
         const outDir = edgeDir(k);
         const inDir = edgeDir(inIdx);
@@ -736,10 +738,6 @@ function WallCornerDimensions({
         const outW = outPiece ? outPiece.alongMax - outPiece.alongMin : 0;
         const inW = inPiece ? inPiece.alongMax - inPiece.alongMin : 0;
 
-        const isFarCorner = Math.abs(v[0] - farX) < 1e-6 && Math.abs(v[1] - farY) < 1e-6;
-        const cornerHeight = isFarCorner ? raisedY : dimY;
-        const at = (p: Vec2): Vec3 => planToWorld(p, cornerHeight);
-
         const outNormal = rotateMinus90(outDir);
         const inNormal = rotateMinus90(inDir);
         const bisector = normalize([outNormal[0] + inNormal[0], outNormal[1] + inNormal[1]]);
@@ -755,7 +753,6 @@ function WallCornerDimensions({
                 from={at(outStart)}
                 to={at([outStart[0] + outDir[0] * outW, outStart[1] + outDir[1] * outW])}
                 color={RED}
-                occludable={isFarCorner}
               />
             )}
             {inW > 1e-6 && (
@@ -763,37 +760,39 @@ function WallCornerDimensions({
                 from={at(inStart)}
                 to={at([inStart[0] - inDir[0] * inW, inStart[1] - inDir[1] * inW])}
                 color={RED}
-                occludable={isFarCorner}
               />
             )}
-            <Html
-              position={at(labelPos)}
-              center
-              occlude={isFarCorner ? true : undefined}
-              style={{ pointerEvents: 'none' }}
-              zIndexRange={[100, 0]}
-            >
-              <div
-                style={{
-                  background: 'rgba(12,12,16,0.92)',
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  padding: '3px 7px',
-                  borderRadius: 3,
-                  borderLeft: `3px solid ${RED}`,
-                  whiteSpace: 'nowrap',
-                  fontFamily: 'system-ui, sans-serif',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
-                }}
-              >
-                a = {walls.a.a.toFixed(2)} ft
-              </div>
-            </Html>
+            <CornerLabel position={at(labelPos)} color={RED} text={`a = ${walls.a.a.toFixed(2)} ft`} />
           </group>
         );
       })}
     </group>
+  );
+}
+
+/** The "a = X ft" pill for one wall corner — split out from WallCornerDimensions so it can call the label-collision hook (which, per the rules of hooks, can't be called directly inside that component's `.map()` callback). */
+function CornerLabel({ position, color, text }: { position: Vec3; color: string; text: string }) {
+  const labelRef = useCollidableLabelRef();
+  return (
+    <Html position={position} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+      <div
+        ref={labelRef}
+        style={{
+          background: 'rgba(12,12,16,0.92)',
+          color: '#fff',
+          fontSize: 12,
+          fontWeight: 600,
+          padding: '3px 7px',
+          borderRadius: 3,
+          borderLeft: `3px solid ${color}`,
+          whiteSpace: 'nowrap',
+          fontFamily: 'system-ui, sans-serif',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+        }}
+      >
+        {text}
+      </div>
+    </Html>
   );
 }
 
@@ -997,25 +996,27 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
       <GableEndInfill building={building} />
       <MonoslopeEnvelopeInfill building={building} />
 
-      {isSteep ? (
-        <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
-      ) : isMonoslope ? (
-        <MonoslopeRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
-      ) : isStepped ? (
-        <SteppedRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
-      ) : (
-        <RoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
-      )}
-      <WallCornerDimensions building={building} walls={walls} maxSpan={maxSpan} facing={facing} />
-      {step && (
-        <WallCornerDimensions
-          building={step.upper}
-          walls={step.upperWalls}
-          maxSpan={maxSpan}
-          facing={facing}
-        />
-      )}
-      <BuildingDimensions result={result} maxSpan={maxSpan} facing={facing} />
+      <LabelCollisionProvider>
+        {isSteep ? (
+          <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+        ) : isMonoslope ? (
+          <MonoslopeRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+        ) : isStepped ? (
+          <SteppedRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+        ) : (
+          <RoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+        )}
+        <WallCornerDimensions building={building} walls={walls} maxSpan={maxSpan} facing={facing} />
+        {step && (
+          <WallCornerDimensions
+            building={step.upper}
+            walls={step.upperWalls}
+            maxSpan={maxSpan}
+            facing={facing}
+          />
+        )}
+        <BuildingDimensions result={result} maxSpan={maxSpan} facing={facing} />
+      </LabelCollisionProvider>
 
       <OrbitControls makeDefault target={center} />
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>

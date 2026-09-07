@@ -200,44 +200,38 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
           <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
             <th style={{ padding: '3px 0', textAlign: 'left', fontWeight: 600 }}>Zone</th>
             <th style={{ padding: '3px 0', textAlign: 'right', fontWeight: 600 }}>Area</th>
-            <th style={{ padding: '3px 0 3px 10px', textAlign: 'right', fontWeight: 600 }}>Width</th>
-            {hasLegLength && (
-              <th style={{ padding: '3px 0 3px 10px', textAlign: 'right', fontWeight: 600 }}>Leg length</th>
-            )}
           </tr>
         </thead>
         <tbody>
           {areas.map(({ zoneId, area }) => {
             const width = widths[zoneId];
+            const detailParts = [
+              width?.width && `Width ${width.width}`,
+              hasLegLength && width?.legLength && `Leg length ${width.legLength}`,
+            ].filter(Boolean);
             return (
-              <tr key={zoneId} style={{ borderBottom: '1px solid var(--gridline)' }}>
-                <td style={{ padding: '3px 0' }}>{ZONE_LABELS[zoneId]}</td>
-                <td style={{ padding: '3px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                  {area.toFixed(1)} ft²
-                </td>
-                <td
-                  style={{
-                    padding: '3px 0 3px 10px',
-                    textAlign: 'right',
-                    fontVariantNumeric: 'tabular-nums',
-                    color: width ? undefined : 'var(--text-muted)',
-                  }}
-                >
-                  {width?.width ?? '—'}
-                </td>
-                {hasLegLength && (
+              <Fragment key={zoneId}>
+                <tr>
+                  <td style={{ padding: '3px 0 0' }}>{ZONE_LABELS[zoneId]}</td>
+                  <td style={{ padding: '3px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {area.toFixed(1)} ft²
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
                   <td
+                    colSpan={2}
                     style={{
-                      padding: '3px 0 3px 10px',
+                      padding: '1px 0 4px 14px',
                       textAlign: 'right',
+                      fontSize: 11,
                       fontVariantNumeric: 'tabular-nums',
-                      color: width?.legLength ? undefined : 'var(--text-muted)',
+                      color: 'var(--text-muted)',
                     }}
                   >
-                    {width?.legLength ?? '—'}
+                    {detailParts.length > 0 ? detailParts.join(' · ') : ' '}
                   </td>
-                )}
-              </tr>
+                </tr>
+              </Fragment>
             );
           })}
         </tbody>

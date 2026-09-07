@@ -1,34 +1,26 @@
 import * as THREE from 'three';
 import { Line, Html } from '@react-three/drei';
 import type { Vec3 } from '../lib/vec3';
+import { useCollidableLabelRef } from './LabelCollision';
 
 interface DimensionLineProps {
   from: Vec3;
   to: Vec3;
   label?: string;
   color?: string;
-  /**
-   * When true, the line and label respect normal depth testing/occlusion
-   * against the model instead of always drawing on top. Use this for a
-   * dimension whose anchor point can genuinely sit behind the building from
-   * some camera angles, so it disappears there instead of reading as an
-   * x-ray line through the model. Defaults to false (always-on-top), which
-   * is correct for every dimension that's kept anchored to the camera-facing
-   * side of the building.
-   */
-  occludable?: boolean;
 }
 
 /**
  * A CAD-style dimension line: a segment with perpendicular end ticks and an
- * optional floating label. By default drawn with `depthTest={false}` and a
- * high `renderOrder` so it always reads clearly on top of the zone/envelope
+ * optional floating label. Drawn with `depthTest={false}` and a high
+ * `renderOrder` so it always reads clearly on top of the zone/envelope
  * meshes instead of getting partially buried in them, which is what made
- * dimensions hard to see and to associate with a specific zone. Pass
- * `occludable` to opt a specific dimension out of that always-on-top
- * behavior instead.
+ * dimensions hard to see and to associate with a specific zone. The label
+ * registers with the nearest LabelCollisionProvider so it nudges out of the
+ * way of any other dimension label it would otherwise overlap on screen.
  */
-export function DimensionLine({ from, to, label, color = '#333333', occludable = false }: DimensionLineProps) {
+export function DimensionLine({ from, to, label, color = '#333333' }: DimensionLineProps) {
+  const labelRef = useCollidableLabelRef();
   const start = new THREE.Vector3(...from);
   const end = new THREE.Vector3(...to);
   const dir = end.clone().sub(start);
@@ -49,8 +41,8 @@ export function DimensionLine({ from, to, label, color = '#333333', occludable =
   const lineProps = {
     color,
     lineWidth: 2.25,
-    depthTest: !occludable,
-    renderOrder: occludable ? 0 : 999,
+    depthTest: false,
+    renderOrder: 999,
   };
 
   return (
@@ -59,14 +51,9 @@ export function DimensionLine({ from, to, label, color = '#333333', occludable =
       <Line points={[start.clone().add(tick), start.clone().sub(tick)]} {...lineProps} />
       <Line points={[end.clone().add(tick), end.clone().sub(tick)]} {...lineProps} />
       {label && (
-        <Html
-          position={mid}
-          center
-          occlude={occludable ? true : undefined}
-          style={{ pointerEvents: 'none' }}
-          zIndexRange={[100, 0]}
-        >
+        <Html position={mid} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
           <div
+            ref={labelRef}
             style={{
               background: 'rgba(12,12,16,0.92)',
               color: '#fff',
