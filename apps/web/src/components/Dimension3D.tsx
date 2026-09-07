@@ -16,7 +16,7 @@ interface DimensionLineProps {
  * meshes instead of getting partially buried in them, which is what made
  * dimensions hard to see and to associate with a specific zone.
  */
-export function DimensionLine({ from, to, label, color = '#ffffff' }: DimensionLineProps) {
+export function DimensionLine({ from, to, label, color = '#333333' }: DimensionLineProps) {
   const start = new THREE.Vector3(...from);
   const end = new THREE.Vector3(...to);
   const dir = end.clone().sub(start);

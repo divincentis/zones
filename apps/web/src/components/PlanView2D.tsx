@@ -41,7 +41,7 @@ function PlanDimension({
   const isHorizontal = Math.abs(dx) >= Math.abs(dy);
 
   return (
-    <g stroke="#5ec9ff" strokeWidth={1.5}>
+    <g stroke="#1170a8" strokeWidth={1.5}>
       <line x1={x1} y1={y1} x2={x2} y2={y2} />
       <line x1={x1 - perpX} y1={y1 - perpY} x2={x1 + perpX} y2={y1 + perpY} />
       <line x1={x2 - perpX} y1={y2 - perpY} x2={x2 + perpX} y2={y2 + perpY} />
@@ -52,7 +52,7 @@ function PlanDimension({
         fontWeight={700}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill="#5ec9ff"
+        fill="#1170a8"
         stroke="none"
         style={{ pointerEvents: 'none' }}
       >
