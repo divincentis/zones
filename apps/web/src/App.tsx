@@ -15,6 +15,8 @@ export function App() {
   const [view, setView] = useState<ViewMode>('3d');
   const [hovered, setHovered] = useState<HoverInfo | null>(null);
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  /** Board width (ft) to round zone widths up to for takeoff, e.g. 4 or 8 ft. null = off. */
+  const [boardSize, setBoardSize] = useState<number | null>(null);
 
   const outcome = useMemo(() => computeZones(form), [form]);
 
@@ -68,7 +70,7 @@ export function App() {
           ))}
           {outcome.ok && view === '3d' && (
             <button
-              onClick={() => canvasEl && exportZonePdf(canvasEl, outcome.result, form)}
+              onClick={() => canvasEl && exportZonePdf(canvasEl, outcome.result, form, boardSize ?? undefined)}
               disabled={!canvasEl}
               style={{
                 padding: '6px 12px',
@@ -112,7 +114,15 @@ export function App() {
           background: 'var(--surface-1)',
         }}
       >
-        {outcome.ok && <AssumptionsPanel result={outcome.result} form={form} hovered={hovered} />}
+        {outcome.ok && (
+          <AssumptionsPanel
+            result={outcome.result}
+            form={form}
+            hovered={hovered}
+            boardSize={boardSize}
+            onBoardSizeChange={setBoardSize}
+          />
+        )}
       </aside>
     </div>
   );

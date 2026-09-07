@@ -31,7 +31,8 @@ function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: 
 export function exportZonePdf(
   canvas: HTMLCanvasElement,
   result: ComputationResult,
-  form: FormState
+  form: FormState,
+  boardSize?: number
 ): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -142,8 +143,16 @@ export function exportZonePdf(
   y += 16;
   doc.setFontSize(9);
   const areas = zoneAreas(result);
-  const widths = computeZoneWidths(result);
+  const widths = computeZoneWidths(result, boardSize);
   const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  if (boardSize && boardSize > 0) {
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`Widths rounded up to ${boardSize} ft boards where shown ("exact → rounded").`, margin, y);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    y += 14;
+  }
   const valueX = margin + 160;
   for (const { zoneId, area } of areas) {
     if (y > pageHeight - margin) {

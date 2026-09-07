@@ -21,6 +21,21 @@ export interface ZoneWidthInfo {
 
 const fmt = (n: number) => `${n.toFixed(2)} ft`;
 
+/** Rounds n up to the next multiple of boardSize, e.g. for board-coverage takeoff. */
+const roundUpToBoard = (n: number, boardSize: number) => Math.ceil(n / boardSize) * boardSize;
+
+/**
+ * Formats a width, appending the board-rounded figure (e.g. "12.34 ft → 16 ft")
+ * when boardSize is set — roofers round zone widths up to whole boards (commonly
+ * 4 ft, sometimes 8 ft) when ordering coverage/insulation boards.
+ */
+const fmtWidth = (n: number, boardSize?: number) => {
+  if (!boardSize || boardSize <= 0) return fmt(n);
+  const rounded = roundUpToBoard(n, boardSize);
+  const roundedStr = Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
+  return `${fmt(n)} → ${roundedStr} ft`;
+};
+
 /**
  * Per-zone width figures for the "Zone areas" table, computed the same way
  * as the matching call-outs in Scene3D's RoofDimensions / SteepRoofDimensions
@@ -28,21 +43,31 @@ const fmt = (n: number) => `${n.toFixed(2)} ft`;
  * view never disagree. Only zones with a meaningful single (or lower/upper,
  * or high/low) width figure are included; a zone with no entry renders as
  * "—" in the table.
+ *
+ * `boardSize`, when provided, additionally rounds each width up to the next
+ * whole board (see fmtWidth) for material takeoff. Leg lengths are left exact.
  */
-export function computeZoneWidths(result: ComputationResult): Partial<Record<AnyZoneId, ZoneWidthInfo>> {
+export function computeZoneWidths(
+  result: ComputationResult,
+  boardSize?: number
+): Partial<Record<AnyZoneId, ZoneWidthInfo>> {
   const { roof } = result;
   const out: Partial<Record<AnyZoneId, ZoneWidthInfo>> = {};
 
   if (isSteppedRoofResult(roof)) {
     const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
     const regions = roof.regions;
-    const perRegion = (get: (r: SteppedRegionSummary) => number) =>
+    const perRegion = (get: (r: SteppedRegionSummary) => number, roundToBoard = false) =>
       regions.length > 1
-        ? regions.map((r) => `${fmt(get(r))} (${r.role})`).join(' / ')
-        : fmt(get(regions[0]!));
-    out['2'] = { width: perRegion((r) => r.dEdge) };
+        ? regions
+            .map((r) => `${roundToBoard ? fmtWidth(get(r), boardSize) : fmt(get(r))} (${r.role})`)
+            .join(' / ')
+        : roundToBoard
+          ? fmtWidth(get(regions[0]!), boardSize)
+          : fmt(get(regions[0]!));
+    out['2'] = { width: perRegion((r) => r.dEdge, true) };
     if (zone3Exists) {
-      out['3'] = { width: perRegion((r) => r.legWidth), legLength: perRegion((r) => r.dEdge) };
+      out['3'] = { width: perRegion((r) => r.legWidth, true), legLength: perRegion((r) => r.dEdge) };
     }
     return out;
   }
@@ -50,21 +75,23 @@ export function computeZoneWidths(result: ComputationResult): Partial<Record<Any
   if (isMonoslopeRoofResult(roof)) {
     out['2'] =
       roof.pitchBand === '3-10'
-        ? { width: `${fmt(roof.lowBand)} (low) / ${fmt(roof.highBand)} (high)` }
-        : { width: `${fmt(roof.lowBand)} (wrap) / ${fmt(roof.highBand)} (high)` };
+        ? { width: `${fmtWidth(roof.lowBand, boardSize)} (low) / ${fmtWidth(roof.highBand, boardSize)} (high)` }
+        : { width: `${fmtWidth(roof.lowBand, boardSize)} (wrap) / ${fmtWidth(roof.highBand, boardSize)} (high)` };
     out['3'] =
       roof.pitchBand === '3-10'
-        ? { width: `${fmt(roof.lowCornerBand)} (low) / ${fmt(roof.highCornerBand)} (high)` }
-        : { width: fmt(roof.highCornerBand) };
+        ? {
+            width: `${fmtWidth(roof.lowCornerBand, boardSize)} (low) / ${fmtWidth(roof.highCornerBand, boardSize)} (high)`,
+          }
+        : { width: fmtWidth(roof.highCornerBand, boardSize) };
     return out;
   }
 
   if (isSteepRoofResult(roof)) {
-    out['2'] = { width: fmt(roof.rakeBand) };
+    out['2'] = { width: fmtWidth(roof.rakeBand, boardSize) };
     out['3'] =
       roof.pitchBand === '7-27'
-        ? { width: `${fmt(2 * roof.ridgeOrEaveBand)} (straddles ridge)` }
-        : { width: fmt(roof.ridgeOrEaveBand) };
+        ? { width: `${fmtWidth(2 * roof.ridgeOrEaveBand, boardSize)} (straddles ridge)` }
+        : { width: fmtWidth(roof.ridgeOrEaveBand, boardSize) };
     return out;
   }
 
@@ -80,12 +107,12 @@ export function computeZoneWidths(result: ComputationResult): Partial<Record<Any
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
   if (zone3Exists) {
-    out['3'] = { width: fmt(legW), legLength: fmt(dEdgeX) };
+    out['3'] = { width: fmtWidth(legW, boardSize), legLength: fmt(dEdgeX) };
   }
   if (zone1Exists) {
-    out['2'] = { width: fmt(dEdgeY) };
+    out['2'] = { width: fmtWidth(dEdgeY, boardSize) };
     out[roof.hasZone1Prime ? "1'" : '1'] = {
-      width: fmt(roof.hasZone1Prime ? zone1PrimeWidth : zone1Width),
+      width: fmtWidth(roof.hasZone1Prime ? zone1PrimeWidth : zone1Width, boardSize),
     };
   }
   return out;
