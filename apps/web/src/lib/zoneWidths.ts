@@ -19,21 +19,22 @@ export interface ZoneWidthInfo {
   legLength?: string;
 }
 
-const fmt = (n: number) => `${n.toFixed(2)} ft`;
+export const fmt = (n: number) => `${n.toFixed(2)} ft`;
 
 /** Rounds n up to the next multiple of boardSize, e.g. for board-coverage takeoff. */
-const roundUpToBoard = (n: number, boardSize: number) => Math.ceil(n / boardSize) * boardSize;
+export const roundUpToBoard = (n: number, boardSize: number) => Math.ceil(n / boardSize) * boardSize;
 
 /**
- * Formats a width, appending the board-rounded figure (e.g. "12.34 ft → 16 ft")
- * when boardSize is set — roofers round zone widths up to whole boards (commonly
- * 4 ft, sometimes 8 ft) when ordering coverage/insulation boards.
+ * Formats a width. When boardSize is set, roofers order whole boards
+ * (commonly 4 ft, sometimes 8 ft) to cover it, so the board-rounded figure
+ * is what actually gets ordered and built — it's shown as the primary
+ * figure, with the exact figure kept alongside as the minimum it must cover.
  */
-const fmtWidth = (n: number, boardSize?: number) => {
+export const fmtWidth = (n: number, boardSize?: number) => {
   if (!boardSize || boardSize <= 0) return fmt(n);
   const rounded = roundUpToBoard(n, boardSize);
   const roundedStr = Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
-  return `${fmt(n)} → ${roundedStr} ft`;
+  return `${roundedStr} ft (min ${fmt(n)})`;
 };
 
 /**
