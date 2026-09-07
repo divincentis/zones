@@ -1,4 +1,11 @@
-import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult, type FormState } from '../lib/buildModel';
+import { Fragment } from 'react';
+import {
+  isMonoslopeRoofResult,
+  isSteepRoofResult,
+  isSteppedRoofResult,
+  type ComputationResult,
+  type FormState,
+} from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
 import { ZONE_LABELS, type AnyZoneId } from '../lib/zoneColors';
 
@@ -10,9 +17,14 @@ interface Props {
 
 function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
   const ids: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
+  // Wall areas cover both sections of a stepped building; roof pieces already
+  // do, since the stepped algorithm zones both levels in one pass.
+  const wallPieces = result.step
+    ? [...result.walls.pieces, ...result.step.upperWalls.pieces]
+    : result.walls.pieces;
   return ids
     .map((zoneId) => {
-      const source = zoneId === '4' || zoneId === '5' ? result.walls.pieces : result.roof.pieces;
+      const source = zoneId === '4' || zoneId === '5' ? wallPieces : result.roof.pieces;
       const area = source.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
       return { zoneId, area };
     })
@@ -20,8 +32,9 @@ function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: 
 }
 
 export function AssumptionsPanel({ result, form, hovered }: Props) {
-  const { roof, walls } = result;
+  const { roof, walls, step } = result;
   const areas = zoneAreas(result);
+  const stepped = isSteppedRoofResult(roof);
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -58,12 +71,45 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
         <dt>a (wall zones{isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) ? ' + roof bands' : ''})</dt>
         <dd>
           {walls.a.a.toFixed(2)} ft — {walls.a.governingBranch}
+          {step && ` (lower); ${step.upperWalls.a.a.toFixed(2)} ft — ${step.upperWalls.a.governingBranch} (upper)`}
         </dd>
         <dt>L_min</dt>
         <dd>
           {walls.a.lMin.toFixed(2)} ft ({form.aBasis})
+          {step && ` / ${step.upperWalls.a.lMin.toFixed(2)} ft (upper)`}
         </dd>
-        {isMonoslopeRoofResult(roof) ? (
+        {stepped ? (
+          <>
+            <dt>Roof elevation step</dt>
+            <dd>
+              {roof.heightDifference.toFixed(2)} ft ({roof.lower.elevation.toFixed(1)} →{' '}
+              {roof.upper.elevation.toFixed(1)} ft)
+            </dd>
+            <dt>Treatment</dt>
+            <dd>
+              {roof.treatment === 'separate'
+                ? `Two roofs (>= ${roof.threshold} ft) — Fig. 3.2.2b`
+                : `One roof over the union (< ${roof.threshold} ft) — Fig. 3.2.2c`}
+            </dd>
+            {roof.regions.map((region) => (
+              <Fragment key={region.role}>
+                <dt>
+                  h ({region.role}), 0.6h
+                </dt>
+                <dd>
+                  {region.h.toFixed(2)} ft, band {region.dEdge.toFixed(2)} ft
+                </dd>
+                <dt>Zone 1' ({region.role})</dt>
+                <dd>
+                  {region.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min{' '}
+                  {region.lMin.toFixed(1)} ft {'>'} 2.4h = {region.wideThreshold.toFixed(2)} ft)
+                </dd>
+              </Fragment>
+            ))}
+            <dt>Shared wall</dt>
+            <dd>{roof.abutment.length.toFixed(2)} ft long</dd>
+          </>
+        ) : isMonoslopeRoofResult(roof) ? (
           <>
             <dt>Pitch band</dt>
             <dd>{roof.pitchBand}° ({roof.source})</dd>
@@ -97,7 +143,36 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
         )}
       </dl>
 
-      {isMonoslopeRoofResult(roof) ? (
+      {stepped ? (
+        <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
+          {roof.hBasis === 'tallerSection' && (
+            <>
+              The two levels are within {roof.threshold} ft, so FM 1-28 Fig. 3.2.2c treats them as
+              one roof — but the figure does not say whose <code>h</code> to use when the levels
+              differ. The taller section's is used here (conservative: wider bands).{' '}
+            </>
+          )}
+          {roof.treatment === 'separate' && (
+            <>
+              Each roof is zoned with its own <code>h</code>. The taller section's abutting edge
+              gets full perimeter and corner treatment per the Table 3.2.2a note; the lower
+              section's is sheltered and gets none, except where the band wraps 0.6h past the
+              taller section's exposed corner.{' '}
+            </>
+          )}
+          Wall zones keep each section's own <code>a</code>; the lower section's buried wall is
+          excluded and the upper section's shared wall starts at the lower roof. Overhangs are not
+          modeled at an abutment — see scope doc §10.7.
+          {(form.parapetHeight > 0 || form.stepParapetHeight > 0) && (
+            <>
+              {' '}
+              {roof.parapetCreditsCorners
+                ? 'Both sections carry a parapet of at least 3 ft, so Zone 3 corner areas are credited to Zone 2 (Table 3.2.2a, note 2).'
+                : 'The Zone 3→Zone 2 parapet credit needs at least 3 ft on both sections — not met here, so zone geometry is unaffected.'}
+            </>
+          )}
+        </div>
+      ) : isMonoslopeRoofResult(roof) ? (
         <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
           Overhang and parapet are not yet modeled for monoslope roofs. Wall zones use a uniform
           eave height on all four walls — see scope doc §10.5.
@@ -131,7 +206,11 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
       </table>
 
       <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
-        Sources: roof zones — {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}.
+        Sources: roof zones —{' '}
+        {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || stepped
+          ? roof.source
+          : 'FM Global 1-28 Fig 3.2.2a'}
+        .
         Wall zones — a-parameter formula. See scope doc Addendum §10.
       </div>
     </div>

@@ -12,7 +12,12 @@ import {
   type RectFrame,
   type Vec2,
 } from '@zones/engine';
-import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult } from '../lib/buildModel';
+import {
+  isMonoslopeRoofResult,
+  isSteepRoofResult,
+  isSteppedRoofResult,
+  type ComputationResult,
+} from '../lib/buildModel';
 import type { AnyZoneId } from '../lib/zoneColors';
 import { useZoneColors } from '../lib/zoneColors';
 import { describeRoofHover, describeWallHover, type HoverInfo } from '../lib/hoverInfo';
@@ -66,7 +71,7 @@ function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
   const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
 
   useEffect(() => {
-    camera.position.set(maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1);
+    camera.position.set(maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32);
     camera.near = 0.1;
     camera.far = Math.max(1000, maxSpan * 8);
     camera.updateProjectionMatrix();
@@ -140,7 +145,7 @@ function FacingTracker({ center, onChange }: { center: Vec3; onChange: (facing: 
  */
 function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
   const { building, roof } = result;
-  if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof)) return null;
+  if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || isSteppedRoofResult(roof)) return null;
   const roofXs = roof.pieces.flatMap((p) => p.vertices.map((v) => v[0]));
   const roofYs = roof.pieces.flatMap((p) => p.vertices.map((v) => v[1]));
   if (roofXs.length === 0) return null;
@@ -152,11 +157,17 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const dEdgeX = Math.min(roof.dEdge, (roofMaxX - roofMinX) / 2);
   const dEdgeY = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
   const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
+  const dIntX = Math.min(roof.dInterior, (roofMaxX - roofMinX) / 2);
   const dIntY = Math.min(roof.dInterior, (roofMaxY - roofMinY) / 2);
-  // Zone 1's own span (both interior boundaries), not the edge-to-boundary
-  // setback — the setback is already shown by the 0.6h band dimension, so
-  // measuring it again from the roof edge just double-counts that band.
-  const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
+  // When Zone 1' exists, it's a rectangular field beyond both 1.2h interior
+  // boundaries — a plan shape, not a band, so a foreman needs both its
+  // length and width to lay it out (they aren't equal unless the roof is
+  // square). When it doesn't, Zone 1 itself continues all the way in from
+  // the 0.6h edge band on every side (there's no further inset), so it's
+  // still effectively a band and one width call-out is enough.
+  const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
+  const zone1PrimeLength = Math.max(0, roofMaxX - roofMinX - 2 * dIntX);
+  const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
@@ -181,29 +192,62 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const midX = (roofMinX + roofMaxX) / 2;
   const bandX = clampX(midX - gap / 2);
   const interiorX = clampX(midX + gap / 2);
+  // Zone 1' length's row is offset away from dead-center so its label
+  // doesn't land on top of the width dimension's label — both would
+  // otherwise sit at almost the same point, since the width line's own
+  // midpoint (at interiorX) is only "gap" away from true center.
+  const lengthRowY = Math.min(roofMaxY - dIntY, roofMinY + dIntY + zone1PrimeWidth * 0.75);
+  // Leg-length tick sits just past the leg-width one so the two don't
+  // overlap, but never past the corner square's own edge.
+  const legLenOffset = Math.min(legW * 2.2, dEdgeY * 0.9);
 
   return (
     <group>
       {zone3Exists && legW > 1e-6 && (
-        <DimensionLine
-          from={at(nearX, nearY + (dirY * legW) / 2)}
-          to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-          label={`0.2h leg = ${legW.toFixed(2)} ft`}
-          color={AMBER}
-        />
+        <>
+          <DimensionLine
+            from={at(nearX, nearY + (dirY * legW) / 2)}
+            to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
+            label={`Zone 3 leg width = 0.2h = ${legW.toFixed(2)} ft`}
+            color={AMBER}
+          />
+          <DimensionLine
+            from={at(nearX, nearY + dirY * legLenOffset)}
+            to={at(nearX + dirX * dEdgeX, nearY + dirY * legLenOffset)}
+            label={`Zone 3 leg length = 0.6h = ${dEdgeX.toFixed(2)} ft`}
+            color={AMBER}
+          />
+        </>
       )}
       <DimensionLine
         from={at(bandX, nearY)}
         to={at(bandX, nearY + dirY * dEdgeY)}
-        label={`0.6h band = ${dEdgeY.toFixed(2)} ft`}
+        label={`Zone 2 width = 0.6h = ${dEdgeY.toFixed(2)} ft`}
         color={AMBER}
       />
-      <DimensionLine
-        from={at(interiorX, roofMinY + dIntY)}
-        to={at(interiorX, roofMaxY - dIntY)}
-        label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
-        color={BLUE}
-      />
+      {roof.hasZone1Prime ? (
+        <>
+          <DimensionLine
+            from={at(interiorX, roofMinY + dIntY)}
+            to={at(interiorX, roofMaxY - dIntY)}
+            label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
+            color={BLUE}
+          />
+          <DimensionLine
+            from={at(roofMinX + dIntX, lengthRowY)}
+            to={at(roofMaxX - dIntX, lengthRowY)}
+            label={`Zone 1' length = ${zone1PrimeLength.toFixed(2)} ft`}
+            color={BLUE}
+          />
+        </>
+      ) : (
+        <DimensionLine
+          from={at(interiorX, roofMinY + dEdgeY)}
+          to={at(interiorX, roofMaxY - dEdgeY)}
+          label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
+          color={BLUE}
+        />
+      )}
     </group>
   );
 }
@@ -212,7 +256,7 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
 function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
   const { building, roof } = result;
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
-  const { frame, ridgeAxis } = resolveRidgeGeometry(building);
+  const { frame, ridgeAxis, perpExtent } = resolveRidgeGeometry(building);
 
   // The footprint frame's u/v axes always align with world x/y for this
   // app's axis-aligned rectangles (see rectFrame), so the camera-facing
@@ -236,22 +280,41 @@ function SteepRoofDimensions({ result, maxSpan, facing }: { result: ComputationR
   // fan out from a single point, which put their labels on top of each
   // other from some camera angles. Scaled to the viewport (not just the
   // band widths) so the separation actually reads regardless of angle.
-  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.06);
+  // Two different offsets (not one shared "gap") so the two labels' anchor
+  // points land clearly apart — with a single shared offset both dimensions'
+  // midpoints sit almost on top of each other near the corner and their
+  // pill labels overlap illegibly from most camera angles.
+  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.03);
+  const gap2 = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.09);
+  // At 7°-27°, Zone 3 sits centered on the ridge, not at the true corner
+  // (see steepRoofZones.ts) — its across-ridge width is the full 2a straddling
+  // the ridge centerline, not the a-from-corner span the old single dimension
+  // showed (which measured empty Zone 2 near the corner, not Zone 3 at all).
+  const ridgeCenter = perpExtent / 2;
 
   return (
     <group>
       <DimensionLine
         from={at(0, gap)}
         to={at(roof.rakeBand, gap)}
-        label={`a (rake band) = ${roof.rakeBand.toFixed(2)} ft`}
+        label={`Zone 2/3 depth (from rake) = a = ${roof.rakeBand.toFixed(2)} ft`}
         color={AMBER}
       />
-      <DimensionLine
-        from={at(gap, 0)}
-        to={at(gap, roof.ridgeOrEaveBand)}
-        label={`a (${roof.pitchBand === '7-27' ? 'ridge' : 'eave'} band) = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
-        color={BLUE}
-      />
+      {roof.pitchBand === '7-27' ? (
+        <DimensionLine
+          from={at(gap2, ridgeCenter - roof.ridgeOrEaveBand)}
+          to={at(gap2, ridgeCenter + roof.ridgeOrEaveBand)}
+          label={`Zone 3 width (straddles ridge) = 2a = ${(2 * roof.ridgeOrEaveBand).toFixed(2)} ft`}
+          color={BLUE}
+        />
+      ) : (
+        <DimensionLine
+          from={at(gap2, 0)}
+          to={at(gap2, roof.ridgeOrEaveBand)}
+          label={`Zone 3 width (from eave) = a = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
+          color={BLUE}
+        />
+      )}
     </group>
   );
 }
@@ -281,24 +344,144 @@ function MonoslopeRoofDimensions({ result, maxSpan, facing }: { result: Computat
   const at = (x: number, ridgeCoord: number): Vec3 =>
     planToWorld(toWorld(x, nearRidgeCoord + dirRidge * ridgeCoord), y);
 
-  // Nudge each line off the shared corner along the other axis so their
-  // labels don't land on top of each other from some camera angles. Scaled
-  // to the viewport so the separation reads regardless of angle.
-  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.06);
+  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.03);
+  const lowGap = Math.min(roof.lowBand, roof.lowCornerBand || roof.lowBand, maxSpan * 0.06);
+  // The depth dimension's row is pushed past the corner square entirely
+  // (rather than nudged by a small multiplier) so it lands in the open
+  // Zone 2' field beyond, clear of the width dimension's column regardless
+  // of viewing angle — this roof is often viewed nearly edge-on to its
+  // high wall, which can flatten small offsets down to nothing on screen.
+  const depthRow = Math.min(roof.highCornerBand + gap, ridgeParallelExtent / 2);
 
   return (
     <group>
       <DimensionLine
         from={at(gap, 0)}
         to={at(gap, roof.highCornerBand)}
-        label={`4a (high corner) = ${roof.highCornerBand.toFixed(2)} ft`}
+        label={`Zone 3 width (high corner) = 4a = ${roof.highCornerBand.toFixed(2)} ft`}
         color={AMBER}
       />
       <DimensionLine
-        from={at(0, gap)}
-        to={at(roof.highBand, gap)}
-        label={`2a (high band) = ${roof.highBand.toFixed(2)} ft`}
+        from={at(0, depthRow)}
+        to={at(roof.highBand, depthRow)}
+        label={`Zone 2/3 depth (high side) = 2a = ${roof.highBand.toFixed(2)} ft`}
         color={BLUE}
+      />
+      {/* Drawn at mid-edge (not near the corner) so it can't overlap the
+          low-corner dimension below — a small offset from the corner isn't
+          reliable here since this roof is often viewed nearly edge-on. */}
+      <DimensionLine
+        from={at(slopeExtent - roof.lowBand, ridgeParallelExtent / 2)}
+        to={at(slopeExtent, ridgeParallelExtent / 2)}
+        label={`Zone 2 depth (low side) = a = ${roof.lowBand.toFixed(2)} ft`}
+        color={AMBER}
+      />
+      {roof.lowCornerBand > 1e-6 && (
+        <DimensionLine
+          from={at(slopeExtent - roof.lowCornerBand, lowGap)}
+          to={at(slopeExtent, lowGap)}
+          label={`Zone 3 low corner (square) = 2a = ${roof.lowCornerBand.toFixed(2)} ft each side`}
+          color={BLUE}
+        />
+      )}
+    </group>
+  );
+}
+
+/**
+ * Stepped-building call-outs. The zone bands themselves are dimensioned per
+ * roof level — under the separate (>= 10 ft) treatment the two sections have
+ * different `h`, so a single band width would be wrong for one of them — plus
+ * the step height itself, drawn on the shared wall, which is the dimension
+ * that decides which figure governs in the first place.
+ */
+function SteppedRoofDimensions({
+  result,
+  maxSpan,
+  facing,
+}: {
+  result: ComputationResult;
+  maxSpan: number;
+  facing: Facing;
+}) {
+  const { building, roof, step } = result;
+  if (!isSteppedRoofResult(roof) || !step) return null;
+
+  const boundsOf = (vertices: Vec2[]) => {
+    const xs = vertices.map((v) => v[0]);
+    const ys = vertices.map((v) => v[1]);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  };
+
+  // Under the combined treatment there is only one roof and one `h`, so the
+  // band is called out once over the whole union rather than twice.
+  const targets =
+    roof.treatment === 'separate'
+      ? [
+          { region: roof.regions.find((r) => r.role === 'lower')!, vertices: building.vertices, elevation: roof.lower.elevation, name: 'lower roof' },
+          { region: roof.regions.find((r) => r.role === 'upper')!, vertices: step.upper.vertices, elevation: roof.upper.elevation, name: 'upper roof' },
+        ]
+      : [
+          {
+            region: roof.regions[0]!,
+            vertices: [...building.vertices, ...step.upper.vertices],
+            elevation: roof.upper.elevation,
+            name: 'combined roof',
+          },
+        ];
+
+  const { sx, sy } = facing;
+  const abutMidX = (roof.abutment.from[0] + roof.abutment.to[0]) / 2;
+  const abutMidY = (roof.abutment.from[1] + roof.abutment.to[1]) / 2;
+
+  return (
+    <group>
+      {targets.map((target, i) => {
+        const b = boundsOf(target.vertices);
+        const nearX = sx > 0 ? b.maxX : b.minX;
+        const nearY = sy > 0 ? b.maxY : b.minY;
+        const dirX = sx > 0 ? -1 : 1;
+        const dirY = sy > 0 ? -1 : 1;
+        const dEdgeY = Math.min(target.region.dEdge, (b.maxY - b.minY) / 2);
+        const dEdgeX = Math.min(target.region.dEdge, (b.maxX - b.minX) / 2);
+        const legW = Math.min(target.region.legWidth, dEdgeX, dEdgeY);
+        const y = target.elevation + Math.max(0.3, maxSpan * 0.004);
+        const at = (x: number, planY: number): Vec3 => planToWorld([x, planY], y);
+        const bandX = Math.min(Math.max((b.minX + b.maxX) / 2, b.minX + dEdgeX), b.maxX - dEdgeX);
+
+        return (
+          <group key={i}>
+            <DimensionLine
+              from={at(bandX, nearY)}
+              to={at(bandX, nearY + dirY * dEdgeY)}
+              label={`Zone 2 width (${target.name}) = 0.6h = ${dEdgeY.toFixed(2)} ft`}
+              color={AMBER}
+            />
+            {legW > 1e-6 && (
+              <DimensionLine
+                from={at(nearX, nearY + (dirY * legW) / 2)}
+                to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
+                label={`Zone 3 leg width = 0.2h = ${legW.toFixed(2)} ft`}
+                color={BLUE}
+              />
+            )}
+          </group>
+        );
+      })}
+
+      <DimensionLine
+        from={planToWorld([abutMidX, abutMidY], roof.lower.elevation)}
+        to={planToWorld([abutMidX, abutMidY], roof.upper.elevation)}
+        label={
+          `Step = ${roof.heightDifference.toFixed(1)} ft ` +
+          `(${roof.treatment === 'separate' ? `>= ${roof.threshold} ft: two roofs, Fig. 3.2.2b` : `< ${roof.threshold} ft: one roof, Fig. 3.2.2c`})`
+        }
+        color={RED}
       />
     </group>
   );
@@ -442,12 +625,12 @@ function GableEndInfill({ building }: { building: ComputationResult['building'] 
  * straddling piece into two sub-rectangles at the ridge so every rendered
  * quad is an exactly planar slice of one roof pitch.
  */
-function splitGableRoofPiece(
-  piece: { zoneId: string; vertices: Vec2[] },
+function splitGableRoofPiece<P extends { zoneId: string; vertices: Vec2[] }>(
+  piece: P,
   frame: RectFrame,
   ridgeAxis: 'u' | 'v',
   perpExtent: number
-): { zoneId: string; vertices: Vec2[] }[] {
+): P[] {
   const locals = piece.vertices.map((p) => worldToLocal(frame, p));
   const uMin = Math.min(...locals.map((l) => l.u));
   const uMax = Math.max(...locals.map((l) => l.u));
@@ -468,12 +651,12 @@ function splitGableRoofPiece(
         ? localRectToWorld(frame, uMin, uMax, ridgeCenter, vMax)
         : localRectToWorld(frame, ridgeCenter, uMax, vMin, vMax);
     return [
-      { zoneId: piece.zoneId, vertices: lo },
-      { zoneId: piece.zoneId, vertices: hi },
+      { ...piece, vertices: lo },
+      { ...piece, vertices: hi },
     ];
   }
 
-  return [{ zoneId: piece.zoneId, vertices: piece.vertices }];
+  return [piece];
 }
 
 /**
@@ -484,8 +667,17 @@ function splitGableRoofPiece(
  * height, so its dimension is raised above the roofline instead — floating
  * clear of the model rather than reading as an x-ray line through it.
  */
-function WallCornerDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
-  const { building, walls } = result;
+function WallCornerDimensions({
+  building,
+  walls,
+  maxSpan,
+  facing,
+}: {
+  building: ComputationResult['building'];
+  walls: ComputationResult['walls'];
+  maxSpan: number;
+  facing: Facing;
+}) {
   const vertices = building.vertices;
   const n = vertices.length;
 
@@ -591,9 +783,13 @@ function WallCornerDimensions({ result, maxSpan, facing }: { result: Computation
  * the viewer instead of behind the building on the far side.
  */
 function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
-  const { building } = result;
-  const xs = building.vertices.map((v) => v[0]);
-  const ys = building.vertices.map((v) => v[1]);
+  const { building, step } = result;
+  // For a stepped building these are the OVERALL extents across both
+  // sections, not the primary rectangle's — labelled as such below, since
+  // neither section is "the building" on its own.
+  const allVertices = step ? [...building.vertices, ...step.upper.vertices] : building.vertices;
+  const xs = allVertices.map((v) => v[0]);
+  const ys = allVertices.map((v) => v[1]);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -618,42 +814,53 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
       <DimensionLine
         from={at([minX, lineY])}
         to={at([maxX, lineY])}
-        label={`L = ${length.toFixed(1)} ft`}
+        label={`${step ? 'L overall' : 'L'} = ${length.toFixed(1)} ft`}
         color={GREEN}
       />
       <DimensionLine
         from={at([lineX, minY])}
         to={at([lineX, maxY])}
-        label={`B = ${width.toFixed(1)} ft`}
+        label={`${step ? 'B overall' : 'B'} = ${width.toFixed(1)} ft`}
         color={GREEN}
       />
       <DimensionLine
         from={at([cornerX, cornerY], 0)}
         to={at([cornerX, cornerY], building.eaveHeight)}
-        label={`Eave = ${building.eaveHeight.toFixed(1)} ft`}
+        label={`${step ? 'Eave (lower)' : 'Eave'} = ${building.eaveHeight.toFixed(1)} ft`}
         color={GREEN}
       />
+      {step && (
+        <DimensionLine
+          from={at([cornerX + (sx > 0 ? outset : -outset), cornerY], 0)}
+          to={at([cornerX + (sx > 0 ? outset : -outset), cornerY], step.upper.eaveHeight)}
+          label={`Eave (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
+          color={GREEN}
+        />
+      )}
     </group>
   );
 }
 
 export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
   const colors = useZoneColors();
-  const { building, roof, walls } = result;
+  const { building, roof, walls, step } = result;
   const isSteep = isSteepRoofResult(roof);
   const isMonoslope = isMonoslopeRoofResult(roof);
+  const isStepped = isSteppedRoofResult(roof);
   const ridgeLine = building.roof.ridgeLine;
   const highEdge = building.roof.highEdge;
   const [facing, setFacing] = useState<Facing>(DEFAULT_FACING);
 
-  const maxSpan = Math.max(
-    ...building.vertices.map((v) => Math.hypot(v[0], v[1])),
-    building.eaveHeight
-  );
+  // A stepped building's extents span both sections, and its tallest point is
+  // the upper eave — frame the camera on all of it, not just the primary
+  // rectangle, or the second section sits outside the view.
+  const allVertices = step ? [...building.vertices, ...step.upper.vertices] : building.vertices;
+  const topHeight = Math.max(building.eaveHeight, step?.upper.eaveHeight ?? 0);
+  const maxSpan = Math.max(...allVertices.map((v) => Math.hypot(v[0], v[1])), topHeight);
   const center: Vec3 = [
-    building.vertices[2]![0] / 2,
-    building.eaveHeight / 2,
-    building.vertices[2]![1] / 2,
+    (Math.min(...allVertices.map((v) => v[0])) + Math.max(...allVertices.map((v) => v[0]))) / 2,
+    topHeight / 2,
+    (Math.min(...allVertices.map((v) => v[1])) + Math.max(...allVertices.map((v) => v[1]))) / 2,
   ];
 
   const gableGeom = useMemo(
@@ -680,7 +887,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
     <Canvas
       gl={{ preserveDrawingBuffer: true }}
       onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
-      camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40, far: Math.max(1000, maxSpan * 8) }}
+      camera={{ position: [maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32], fov: 40, far: Math.max(1000, maxSpan * 8) }}
     >
       <CameraRig maxSpan={maxSpan} center={center} />
       <FacingTracker center={center} onChange={setFacing} />
@@ -711,7 +918,9 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
                   building.eaveHeight,
                   monoslopeGeom.span
                 )
-              : roofPieceCorners(piece.vertices, building.eaveHeight)
+              : // A stepped building's pieces span two roof planes, so each
+                // carries its own elevation (see ZonePiece.elevation).
+                roofPieceCorners(piece.vertices, piece.elevation ?? building.eaveHeight)
         ) as Quad;
         const isHovered = hovered?.source === 'roof' && hovered.zoneId === zoneId;
         return (
@@ -728,25 +937,40 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
         );
       })}
 
-      {walls.pieces.map((piece, i) => {
-        const zoneId = piece.zoneId as AnyZoneId;
-        const start = building.vertices[piece.edgeIndex]!;
-        const end = building.vertices[(piece.edgeIndex + 1) % building.vertices.length]!;
-        const corners = wallPieceCorners(piece, start, end) as Quad;
-        const isHovered = hovered?.source === 'wall' && hovered.zoneId === zoneId;
-        return (
-          <ZoneQuad
-            key={`wall-${i}`}
-            corners={corners}
-            color={colors[zoneId] ?? '#999'}
-            hovered={isHovered}
-            onHoverStart={() =>
-              onHover(describeWallHover(zoneId, sumPieceArea(walls.pieces, zoneId), walls))
-            }
-            onHoverEnd={() => onHover(null)}
-          />
-        );
-      })}
+      {/* Both sections' walls when stepped. The engine has already dropped the
+          lower section's buried wall and raised the upper section's shared
+          wall to the lower roof line (steppedWallZones.ts), so this renders
+          exactly the exposed surface. */}
+      {(step ? [{ node: building, walls }, { node: step.upper, walls: step.upperWalls }] : [{ node: building, walls }]).map(
+        (section, s) =>
+          section.walls.pieces.map((piece, i) => {
+            const zoneId = piece.zoneId as AnyZoneId;
+            const start = section.node.vertices[piece.edgeIndex]!;
+            const end = section.node.vertices[(piece.edgeIndex + 1) % section.node.vertices.length]!;
+            const corners = wallPieceCorners(piece, start, end) as Quad;
+            const isHovered = hovered?.source === 'wall' && hovered.zoneId === zoneId;
+            return (
+              <ZoneQuad
+                key={`wall-${s}-${i}`}
+                corners={corners}
+                color={colors[zoneId] ?? '#999'}
+                hovered={isHovered}
+                onHoverStart={() =>
+                  onHover(
+                    describeWallHover(
+                      zoneId,
+                      sumPieceArea(walls.pieces, zoneId) +
+                        (step ? sumPieceArea(step.upperWalls.pieces, zoneId) : 0),
+                      section.walls,
+                      step ? (s === 0 ? 'lower section' : 'upper section') : undefined
+                    )
+                  )
+                }
+                onHoverEnd={() => onHover(null)}
+              />
+            );
+          })
+      )}
 
       <GableEndInfill building={building} />
       <MonoslopeEnvelopeInfill building={building} />
@@ -755,10 +979,20 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
         <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
       ) : isMonoslope ? (
         <MonoslopeRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
+      ) : isStepped ? (
+        <SteppedRoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
       ) : (
         <RoofDimensions result={result} maxSpan={maxSpan} facing={facing} />
       )}
-      <WallCornerDimensions result={result} maxSpan={maxSpan} facing={facing} />
+      <WallCornerDimensions building={building} walls={walls} maxSpan={maxSpan} facing={facing} />
+      {step && (
+        <WallCornerDimensions
+          building={step.upper}
+          walls={step.upperWalls}
+          maxSpan={maxSpan}
+          facing={facing}
+        />
+      )}
       <BuildingDimensions result={result} maxSpan={maxSpan} facing={facing} />
 
       <OrbitControls makeDefault target={center} />

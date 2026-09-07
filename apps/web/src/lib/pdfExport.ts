@@ -1,5 +1,11 @@
 import { jsPDF } from 'jspdf';
-import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult, type FormState } from './buildModel';
+import {
+  isMonoslopeRoofResult,
+  isSteepRoofResult,
+  isSteppedRoofResult,
+  type ComputationResult,
+  type FormState,
+} from './buildModel';
 import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
 
 const PRELIMINARY_NOTICE =
@@ -8,9 +14,12 @@ const PRELIMINARY_NOTICE =
 
 function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
   const ids: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
+  const wallPieces = result.step
+    ? [...result.walls.pieces, ...result.step.upperWalls.pieces]
+    : result.walls.pieces;
   return ids
     .map((zoneId) => {
-      const source = zoneId === '4' || zoneId === '5' ? result.walls.pieces : result.roof.pieces;
+      const source = zoneId === '4' || zoneId === '5' ? wallPieces : result.roof.pieces;
       const area = source.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
       return { zoneId, area };
     })
@@ -59,7 +68,31 @@ export function exportZonePdf(
   y += 16;
   doc.setFontSize(9);
   const roof = result.roof;
-  const paramLines = isMonoslopeRoofResult(roof)
+  const paramLines = isSteppedRoofResult(roof)
+    ? [
+        `Stepped building — two abutting low-slope sections. Shared wall ${roof.abutment.length.toFixed(1)} ft long.`,
+        `Lower section: ${form.length} ft x ${form.width} ft, roof elevation ${roof.lower.elevation.toFixed(1)} ft`,
+        `Upper section: ${form.stepSpan} ft x ${form.stepDepth} ft on the ${form.stepEdge} wall (offset ${form.stepOffset} ft), roof elevation ${roof.upper.elevation.toFixed(1)} ft`,
+        `Roof elevation step: ${roof.heightDifference.toFixed(2)} ft — ${
+          roof.treatment === 'separate'
+            ? `>= ${roof.threshold} ft, zoned as two roofs (Fig. 3.2.2b)`
+            : `< ${roof.threshold} ft, zoned as one roof over the union (Fig. 3.2.2c)`
+        }`,
+        ...roof.regions.map(
+          (r) =>
+            `${r.role} roof: h = ${r.h.toFixed(2)} ft, Zone 2 band 0.6h = ${r.dEdge.toFixed(2)} ft, Zone 3 leg 0.2h = ${r.legWidth.toFixed(2)} ft, ` +
+            `Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (L_min ${r.lMin.toFixed(1)} ft vs 2.4h = ${r.wideThreshold.toFixed(2)} ft)`
+        ),
+        `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft lower / ${result.step!.upperWalls.a.a.toFixed(2)} ft upper`,
+        roof.hBasis === 'tallerSection'
+          ? "Combined-roof h taken from the taller section (Fig. 3.2.2c does not specify whose h applies when the levels differ) — conservative."
+          : 'Each roof is zoned with its own h; the taller section keeps full perimeter and corner treatment on the abutting edge, the lower section is sheltered there.',
+        roof.parapetCreditsCorners
+          ? 'Parapet >= 3 ft on both sections: Zone 3 corners credited to Zone 2 (FM 1-28 Table 3.2.2a, note 2).'
+          : undefined,
+        'Wall zones: the lower section\'s buried wall is excluded; the upper section\'s shared wall starts at the lower roof. Overhangs are not modeled at an abutment.',
+      ].filter((line): line is string => line !== undefined)
+    : isMonoslopeRoofResult(roof)
     ? [
         `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (monoslope, high side: ${form.monoslopeHighSide})`,
         `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
@@ -117,7 +150,7 @@ export function exportZonePdf(
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    `Sources: roof zones — ${isMonoslopeRoofResult(roof) || isSteepRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}. ` +
+    `Sources: roof zones — ${isMonoslopeRoofResult(roof) || isSteepRoofResult(roof) || isSteppedRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}. ` +
       'Wall zones — a-parameter formula. See project scope doc Addendum §10.',
     margin,
     y,

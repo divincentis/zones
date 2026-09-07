@@ -5,6 +5,14 @@ export interface ZonePiece {
   zoneId: string;
   vertices: Vec2[];
   area: number;
+  /**
+   * Roof-plane elevation of this piece, in feet above grade. Only set by
+   * algorithms whose pieces do NOT all share one roof plane — currently just
+   * steppedRoofZones.ts, where a single zone map spans two roof levels. The
+   * single-structure algorithms leave it undefined; their consumers already
+   * derive height from the building's own eave/pitch geometry.
+   */
+  elevation?: number;
 }
 
 export function sumArea(pieces: ZonePiece[], zoneId: string): number {
