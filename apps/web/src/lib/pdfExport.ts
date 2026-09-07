@@ -6,7 +6,7 @@ import {
   type ComputationResult,
   type FormState,
 } from './buildModel';
-import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
+import { readZoneHexes, ZONE_LABELS, type AnyZoneId } from './zoneColors';
 import { computeZoneWidths } from './zoneWidths';
 
 const PRELIMINARY_NOTICE =
@@ -201,6 +201,9 @@ export function exportZonePdf(
   const areas = zoneAreas(result);
   const widths = computeZoneWidths(result, boardSize);
   const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  const zoneHexes = readZoneHexes();
+  const swatchSize = 8;
+  const labelX = margin + swatchSize + 6;
   if (boardSize && boardSize > 0) {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
@@ -215,7 +218,9 @@ export function exportZonePdf(
       doc.addPage();
       y = margin;
     }
-    doc.text(ZONE_LABELS[zoneId], margin, y);
+    doc.setFillColor(zoneHexes[zoneId]);
+    doc.rect(margin, y - swatchSize + 2, swatchSize, swatchSize, 'F');
+    doc.text(ZONE_LABELS[zoneId], labelX, y);
     doc.text(`${area.toFixed(1)} ft²`, valueX, y);
     y += 12;
 
