@@ -28,7 +28,10 @@ export function App() {
           background: 'var(--surface-1)',
         }}
       >
-        <h1 style={{ fontSize: 15, margin: '0 0 16px' }}>Wind Zone Visualizer</h1>
+        <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>Wind Zone Visualizer</h1>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 16px', minHeight: 15 }}>
+          {form.projectName.trim()}
+        </div>
         <BuildingForm form={form} onChange={setForm} />
         <h3
           style={{
@@ -44,7 +47,7 @@ export function App() {
         <ZoneLegend hovered={hovered} />
       </aside>
 
-      <main style={{ position: 'relative', background: 'var(--surface-0)' }}>
+      <main style={{ position: 'relative', background: 'var(--surface-0)', minHeight: 0, overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1, display: 'flex', gap: 4 }}>
           {(['3d', '2d'] as ViewMode[]).map((mode) => (
             <button

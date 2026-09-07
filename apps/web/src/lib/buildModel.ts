@@ -17,6 +17,7 @@ export type RidgeAxisChoice = 'length' | 'width';
 export type MonoslopeHighSideChoice = 'lengthNear' | 'lengthFar' | 'widthNear' | 'widthFar';
 
 export interface FormState {
+  projectName: string;
   length: number;
   width: number;
   eaveHeight: number;
@@ -30,6 +31,7 @@ export interface FormState {
 }
 
 export const DEFAULT_FORM_STATE: FormState = {
+  projectName: '',
   length: 120,
   width: 80,
   eaveHeight: 22,

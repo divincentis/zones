@@ -76,6 +76,97 @@ function NumberField(props: {
   );
 }
 
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+function degreesToRise12(deg: number): number {
+  return Math.tan((deg * Math.PI) / 180) * 12;
+}
+
+function rise12ToDegrees(rise: number): number {
+  return (Math.atan(rise / 12) * 180) / Math.PI;
+}
+
+/**
+ * Roof pitch, editable as either degrees or a rise:12 ratio — whichever the
+ * user is more comfortable with. `pitchDegrees` stays the one canonical
+ * value (engine only ever reads degrees); the other field is just a synced
+ * display of the same angle, recomputed whenever the canonical value
+ * changes from outside (including from typing in the other field).
+ */
+function PitchField({ pitchDegrees, onChange }: { pitchDegrees: number; onChange: (v: number) => void }) {
+  const [degText, setDegText] = useState(String(round2(pitchDegrees)));
+  const [riseText, setRiseText] = useState(String(round2(degreesToRise12(pitchDegrees))));
+  const lastEmitted = useRef(pitchDegrees);
+
+  useEffect(() => {
+    if (pitchDegrees !== lastEmitted.current) {
+      lastEmitted.current = pitchDegrees;
+      setDegText(String(round2(pitchDegrees)));
+      setRiseText(String(round2(degreesToRise12(pitchDegrees))));
+    }
+  }, [pitchDegrees]);
+
+  const handleDeg = (raw: string) => {
+    setDegText(raw);
+    const parsed = Number(raw);
+    if (raw.trim() !== '' && !Number.isNaN(parsed)) {
+      lastEmitted.current = parsed;
+      setRiseText(String(round2(degreesToRise12(parsed))));
+      onChange(parsed);
+    }
+  };
+
+  const handleRise = (raw: string) => {
+    setRiseText(raw);
+    const parsed = Number(raw);
+    if (raw.trim() !== '' && !Number.isNaN(parsed)) {
+      const deg = rise12ToDegrees(parsed);
+      lastEmitted.current = deg;
+      setDegText(String(round2(deg)));
+      onChange(deg);
+    }
+  };
+
+  return (
+    <div style={ROW_STYLE}>
+      <label style={LABEL_STYLE}>Roof pitch</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <input
+            type="number"
+            style={FIELD_STYLE}
+            value={degText}
+            min={0}
+            step={1}
+            onChange={(e) => handleDeg(e.target.value)}
+            onBlur={() => {
+              if (degText.trim() === '' || Number.isNaN(Number(degText))) setDegText(String(round2(pitchDegrees)));
+            }}
+          />
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>degrees</div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <input
+            type="number"
+            style={FIELD_STYLE}
+            value={riseText}
+            min={0}
+            step={0.25}
+            onChange={(e) => handleRise(e.target.value)}
+            onBlur={() => {
+              if (riseText.trim() === '' || Number.isNaN(Number(riseText)))
+                setRiseText(String(round2(degreesToRise12(pitchDegrees))));
+            }}
+          />
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>rise : 12</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BuildingForm({ form, onChange }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     onChange({ ...form, [key]: value });
@@ -89,6 +180,16 @@ export function BuildingForm({ form, onChange }: Props) {
       <h2 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
         Building — Rectangle
       </h2>
+      <div style={ROW_STYLE}>
+        <label style={LABEL_STYLE}>Project name</label>
+        <input
+          type="text"
+          style={FIELD_STYLE}
+          value={form.projectName}
+          placeholder="Untitled project"
+          onChange={(e) => set('projectName', e.target.value)}
+        />
+      </div>
       <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
       <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
       <NumberField label="Eave height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
@@ -109,13 +210,7 @@ export function BuildingForm({ form, onChange }: Props) {
 
       {hasRidge && (
         <>
-          <NumberField
-            label="Roof pitch (degrees)"
-            value={form.pitchDegrees}
-            min={0}
-            step={1}
-            onChange={(v) => set('pitchDegrees', v)}
-          />
+          <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
             <label style={LABEL_STYLE}>Ridge orientation</label>
             <select
@@ -139,13 +234,7 @@ export function BuildingForm({ form, onChange }: Props) {
 
       {isMonoslope && (
         <>
-          <NumberField
-            label="Roof pitch (degrees)"
-            value={form.pitchDegrees}
-            min={0}
-            step={1}
-            onChange={(v) => set('pitchDegrees', v)}
-          />
+          <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
             <label style={LABEL_STYLE}>High side</label>
             <select
@@ -176,18 +265,27 @@ export function BuildingForm({ form, onChange }: Props) {
         </>
       )}
 
-      <div style={ROW_STYLE}>
-        <label style={LABEL_STYLE}>a-basis (governs L_min for non-rectangular footprints)</label>
-        <select
-          style={FIELD_STYLE}
-          value={form.aBasis}
-          onChange={(e) => set('aBasis', e.target.value as ABasis)}
-        >
-          <option value="boundingRect">Bounding rectangle</option>
-          <option value="shortestEdge">Shortest edge</option>
-          <option value="perWing">Per wing</option>
-        </select>
-      </div>
+      <details style={{ ...NOTE_STYLE, marginBottom: 14 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-secondary)' }}>
+          Advanced: corner-dimension basis
+        </summary>
+        <div style={{ marginTop: 8 }}>
+          <p style={{ margin: '0 0 8px' }}>
+            This building is always modeled as a rectangle, so the choices below give the exact
+            same result — they only matter for non-rectangular building shapes, which this tool
+            doesn&apos;t support yet. It&apos;s safe to leave this on the default.
+          </p>
+          <select
+            style={FIELD_STYLE}
+            value={form.aBasis}
+            onChange={(e) => set('aBasis', e.target.value as ABasis)}
+          >
+            <option value="boundingRect">Bounding rectangle (default)</option>
+            <option value="shortestEdge">Shortest edge</option>
+            <option value="perWing">Per wing</option>
+          </select>
+        </div>
+      </details>
     </div>
   );
 }

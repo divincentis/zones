@@ -9,8 +9,14 @@ interface DimensionLineProps {
   color?: string;
 }
 
-/** A CAD-style dimension line: a segment with perpendicular end ticks and an optional floating label. */
-export function DimensionLine({ from, to, label, color = '#e8e8e8' }: DimensionLineProps) {
+/**
+ * A CAD-style dimension line: a segment with perpendicular end ticks and an
+ * optional floating label. Drawn with `depthTest={false}` and a high
+ * `renderOrder` so it always reads clearly on top of the zone/envelope
+ * meshes instead of getting partially buried in them, which is what made
+ * dimensions hard to see and to associate with a specific zone.
+ */
+export function DimensionLine({ from, to, label, color = '#ffffff' }: DimensionLineProps) {
   const start = new THREE.Vector3(...from);
   const end = new THREE.Vector3(...to);
   const dir = end.clone().sub(start);
@@ -28,23 +34,27 @@ export function DimensionLine({ from, to, label, color = '#e8e8e8' }: DimensionL
   const tick = perp.multiplyScalar(tickLen / 2);
 
   const mid = start.clone().add(end).multiplyScalar(0.5);
+  const lineProps = { color, lineWidth: 2.25, depthTest: false, renderOrder: 999 };
 
   return (
     <group>
-      <Line points={[start, end]} color={color} lineWidth={1.25} />
-      <Line points={[start.clone().add(tick), start.clone().sub(tick)]} color={color} lineWidth={1.25} />
-      <Line points={[end.clone().add(tick), end.clone().sub(tick)]} color={color} lineWidth={1.25} />
+      <Line points={[start, end]} {...lineProps} />
+      <Line points={[start.clone().add(tick), start.clone().sub(tick)]} {...lineProps} />
+      <Line points={[end.clone().add(tick), end.clone().sub(tick)]} {...lineProps} />
       {label && (
-        <Html position={mid} center style={{ pointerEvents: 'none' }}>
+        <Html position={mid} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
           <div
             style={{
-              background: 'rgba(20,20,24,0.85)',
+              background: 'rgba(12,12,16,0.92)',
               color: '#fff',
-              fontSize: 11,
-              padding: '2px 5px',
+              fontSize: 12,
+              fontWeight: 600,
+              padding: '3px 7px',
               borderRadius: 3,
+              borderLeft: `3px solid ${color}`,
               whiteSpace: 'nowrap',
               fontFamily: 'system-ui, sans-serif',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
             }}
           >
             {label}

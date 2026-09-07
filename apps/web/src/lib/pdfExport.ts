@@ -28,18 +28,28 @@ export function exportZonePdf(
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
 
+  const title = form.projectName.trim() || 'Wind Zone Geometry Report';
   doc.setFontSize(16);
-  doc.text('Wind Zone Geometry Report', margin, 46);
+  doc.text(title, margin, 46);
+
+  let noticeY = 64;
+  if (form.projectName.trim()) {
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Wind Zone Geometry Report', margin, noticeY);
+    doc.setTextColor(0, 0, 0);
+    noticeY += 14;
+  }
 
   doc.setFontSize(9);
   doc.setTextColor(140, 100, 0);
-  doc.text(PRELIMINARY_NOTICE, margin, 64, { maxWidth: pageWidth - margin * 2 });
+  doc.text(PRELIMINARY_NOTICE, margin, noticeY, { maxWidth: pageWidth - margin * 2 });
   doc.setTextColor(0, 0, 0);
 
   const imgData = canvas.toDataURL('image/jpeg', 0.85);
   const imgW = pageWidth - margin * 2;
   const imgH = imgW * (canvas.height / canvas.width);
-  const imgY = 92;
+  const imgY = noticeY + 28;
   doc.addImage(imgData, 'JPEG', margin, imgY, imgW, imgH);
 
   let y = imgY + imgH + 28;
@@ -114,5 +124,8 @@ export function exportZonePdf(
     { maxWidth: pageWidth - margin * 2 }
   );
 
-  doc.save('wind-zone-report.pdf');
+  const fileSlug = form.projectName.trim()
+    ? form.projectName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
+    : 'wind-zone-report';
+  doc.save(`${fileSlug || 'wind-zone-report'}.pdf`);
 }

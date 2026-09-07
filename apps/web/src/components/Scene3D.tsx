@@ -83,7 +83,15 @@ function normalize(d: Vec2): Vec2 {
   return [d[0] / len, d[1] / len];
 }
 
-/** Roof zone widths — Zone 2/3 edge band (0.6h), Zone 3 leg (0.2h), Zone 1 interior boundary (1.2h) — dimensioned off the front-left roof corner. */
+/**
+ * Roof zone widths — Zone 3 leg (0.2h), Zone 2/3 edge band (0.6h), Zone 1
+ * interior boundary (1.2h). Drawn inside the roof plan (on the actual zone
+ * they measure) rather than floating outside the building footprint, so
+ * each dimension reads next to the zone it describes. The leg dimension
+ * only applies when Zone 3 actually exists — a parapet >= 3 ft credits the
+ * corner to Zone 2, at which point the leg/far-corner split inside that
+ * corner square is no longer a real zone boundary.
+ */
 function RoofDimensions({ result, maxSpan }: { result: ComputationResult; maxSpan: number }) {
   const { building, roof } = result;
   if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof)) return null;
@@ -99,28 +107,40 @@ function RoofDimensions({ result, maxSpan }: { result: ComputationResult; maxSpa
   const dEdgeY = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
   const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
   const dIntY = Math.min(roof.dInterior, (roofMaxY - roofMinY) / 2);
+  const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
-  const outset = Math.max(0.5, maxSpan * 0.012);
   const at = (x: number, planY: number): Vec3 => planToWorld([x, planY], y);
+
+  // Two side-by-side columns, clear of the corner square, so the 0.6h band
+  // and 1.2h interior dimensions land inside their own zone (Zone 2, then
+  // Zone 1) instead of outside the building.
+  const gap = Math.max(2, maxSpan * 0.03);
+  const clampX = (x: number) =>
+    Math.min(Math.max(x, roofMinX + dEdgeX + gap * 0.3), roofMaxX - dEdgeX - gap * 0.3);
+  const midX = (roofMinX + roofMaxX) / 2;
+  const bandX = clampX(midX - gap / 2);
+  const interiorX = clampX(midX + gap / 2);
 
   return (
     <group>
+      {zone3Exists && legW > 1e-6 && (
+        <DimensionLine
+          from={at(roofMinX, roofMinY + legW / 2)}
+          to={at(roofMinX + legW, roofMinY + legW / 2)}
+          label={`0.2h leg = ${legW.toFixed(2)} ft`}
+          color="#ffcc66"
+        />
+      )}
       <DimensionLine
-        from={at(roofMinX, roofMinY - outset)}
-        to={at(roofMinX + legW, roofMinY - outset)}
-        label={`0.2h leg = ${legW.toFixed(2)} ft`}
-        color="#ffcc66"
-      />
-      <DimensionLine
-        from={at(roofMinX - outset, roofMinY)}
-        to={at(roofMinX - outset, roofMinY + dEdgeY)}
+        from={at(bandX, roofMinY)}
+        to={at(bandX, roofMinY + dEdgeY)}
         label={`0.6h band = ${dEdgeY.toFixed(2)} ft`}
         color="#ffcc66"
       />
       <DimensionLine
-        from={at(roofMinX - outset * 2.2, roofMinY)}
-        to={at(roofMinX - outset * 2.2, roofMinY + dIntY)}
+        from={at(interiorX, roofMinY)}
+        to={at(interiorX, roofMinY + dIntY)}
         label={`1.2h interior = ${dIntY.toFixed(2)} ft`}
         color="#66ccff"
       />
@@ -140,17 +160,23 @@ function SteepRoofDimensions({ result, maxSpan }: { result: ComputationResult; m
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
   const at = (rakeCoord: number, ridgeCoord: number): Vec3 => planToWorld(toWorld(rakeCoord, ridgeCoord), y);
 
+  // Nudge each line off the shared corner along the other axis so they don't
+  // fan out from a single point, which put their labels on top of each
+  // other from some camera angles. Scaled to the viewport (not just the
+  // band widths) so the separation actually reads regardless of angle.
+  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.06);
+
   return (
     <group>
       <DimensionLine
-        from={at(0, 0)}
-        to={at(roof.rakeBand, 0)}
+        from={at(0, gap)}
+        to={at(roof.rakeBand, gap)}
         label={`a (rake band) = ${roof.rakeBand.toFixed(2)} ft`}
         color="#ffcc66"
       />
       <DimensionLine
-        from={at(0, 0)}
-        to={at(0, roof.ridgeOrEaveBand)}
+        from={at(gap, 0)}
+        to={at(gap, roof.ridgeOrEaveBand)}
         label={`a (${roof.pitchBand === '7-27' ? 'ridge' : 'eave'} band) = ${roof.ridgeOrEaveBand.toFixed(2)} ft`}
         color="#66ccff"
       />
@@ -174,17 +200,22 @@ function MonoslopeRoofDimensions({ result, maxSpan }: { result: ComputationResul
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
   const at = (x: number, planY: number): Vec3 => planToWorld(toWorld(x, planY), y);
 
+  // Nudge each line off the shared corner along the other axis so their
+  // labels don't land on top of each other from some camera angles. Scaled
+  // to the viewport so the separation reads regardless of angle.
+  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.06);
+
   return (
     <group>
       <DimensionLine
-        from={at(0, 0)}
-        to={at(0, roof.highCornerBand)}
+        from={at(gap, 0)}
+        to={at(gap, roof.highCornerBand)}
         label={`4a (high corner) = ${roof.highCornerBand.toFixed(2)} ft`}
         color="#ffcc66"
       />
       <DimensionLine
-        from={at(0, 0)}
-        to={at(roof.highBand, 0)}
+        from={at(0, gap)}
+        to={at(roof.highBand, gap)}
         label={`2a (high band) = ${roof.highBand.toFixed(2)} ft`}
         color="#66ccff"
       />
@@ -281,7 +312,10 @@ function EnvelopeMesh({ corners }: { corners: Vec3[] }) {
  */
 function GableEndInfill({ building }: { building: ComputationResult['building'] }) {
   const ridgeLine = building.roof.ridgeLine;
-  if (building.roofType !== 'gable' || !ridgeLine) return null;
+  // At <=7° the roof itself renders flat (computeLowSlopeRoofZones takes
+  // over), so a pitched gable-end cap here would rise above a roof surface
+  // that isn't actually pitched. Skip it to match.
+  if (building.roofType !== 'gable' || !ridgeLine || building.roof.pitchDegrees <= 7) return null;
   const { perpExtent } = resolveRidgeGeometry(building);
   const n = building.vertices.length;
 
@@ -380,8 +414,8 @@ function WallCornerDimensions({ result, maxSpan }: { result: ComputationResult; 
   };
 
   const dimY = Math.max(0.5, maxSpan * 0.015);
-  const wallOffset = Math.max(1, maxSpan * 0.015);
-  const labelOffset = Math.max(1, maxSpan * 0.02);
+  const wallOffset = Math.max(1.5, maxSpan * 0.02);
+  const labelOffset = Math.max(2, maxSpan * 0.032);
   const at = (p: Vec2): Vec3 => planToWorld(p, dimY);
 
   return (
@@ -427,16 +461,19 @@ function WallCornerDimensions({ result, maxSpan }: { result: ComputationResult; 
                 color="#ff9999"
               />
             )}
-            <Html position={at(labelPos)} center style={{ pointerEvents: 'none' }}>
+            <Html position={at(labelPos)} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
               <div
                 style={{
-                  background: 'rgba(20,20,24,0.85)',
+                  background: 'rgba(12,12,16,0.92)',
                   color: '#fff',
-                  fontSize: 11,
-                  padding: '2px 5px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '3px 7px',
                   borderRadius: 3,
+                  borderLeft: '3px solid #ff9999',
                   whiteSpace: 'nowrap',
                   fontFamily: 'system-ui, sans-serif',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
                 }}
               >
                 a = {walls.a.a.toFixed(2)} ft
@@ -445,6 +482,45 @@ function WallCornerDimensions({ result, maxSpan }: { result: ComputationResult; 
           </group>
         );
       })}
+    </group>
+  );
+}
+
+/** Overall building footprint (L x B) and eave height, dimensioned further out than the per-zone dimensions so they read as the whole-building envelope rather than another zone band. */
+function BuildingDimensions({ result, maxSpan }: { result: ComputationResult; maxSpan: number }) {
+  const { building } = result;
+  const v0 = building.vertices[0]!;
+  const v1 = building.vertices[1]!;
+  const v2 = building.vertices[2]!;
+  const v3 = building.vertices[3]!;
+  const length = Math.hypot(v1[0] - v0[0], v1[1] - v0[1]);
+  const width = Math.hypot(v3[0] - v0[0], v3[1] - v0[1]);
+
+  const outset = Math.max(3, maxSpan * 0.06);
+  const at = (p: Vec2, height = 0): Vec3 => planToWorld(p, height);
+  const color = '#9be89b';
+
+  return (
+    <group>
+      <DimensionLine
+        from={at([v0[0], v0[1] - outset])}
+        to={at([v1[0], v1[1] - outset])}
+        label={`L = ${length.toFixed(1)} ft`}
+        color={color}
+      />
+      <DimensionLine
+        from={at([v0[0] - outset, v0[1]])}
+        to={at([v3[0] - outset, v3[1]])}
+        label={`B = ${width.toFixed(1)} ft`}
+        color={color}
+      />
+      {/* Anchored at the opposite (far) corner from the leg/L/B dimensions so its label doesn't stack on top of theirs. */}
+      <DimensionLine
+        from={at([v2[0] + outset, v2[1] + outset], 0)}
+        to={at([v2[0] + outset, v2[1] + outset], building.eaveHeight)}
+        label={`Eave = ${building.eaveHeight.toFixed(1)} ft`}
+        color={color}
+      />
     </group>
   );
 }
@@ -569,6 +645,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
         <RoofDimensions result={result} maxSpan={maxSpan} />
       )}
       <WallCornerDimensions result={result} maxSpan={maxSpan} />
+      <BuildingDimensions result={result} maxSpan={maxSpan} />
 
       <OrbitControls makeDefault target={center} />
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
