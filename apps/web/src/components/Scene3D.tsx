@@ -943,7 +943,23 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
   return (
     <Canvas
       gl={{ preserveDrawingBuffer: true }}
-      onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
+      onCreated={(state) => {
+        onCanvasReady?.(state.gl.domElement);
+        // Without preventDefault() here, a lost WebGL context (GPU driver reset, tab
+        // backgrounding, too many contexts across tabs) is never restored — the canvas
+        // stays permanently blank while the DOM-based dimension labels keep rendering
+        // on top, since those are unaffected by the GL context. Allowing restoration
+        // and forcing a fresh frame afterward brings the 3D geometry back.
+        const canvas = state.gl.domElement;
+        const handleContextLost = (event: Event) => {
+          event.preventDefault();
+        };
+        const handleContextRestored = () => {
+          state.invalidate();
+        };
+        canvas.addEventListener('webglcontextlost', handleContextLost);
+        canvas.addEventListener('webglcontextrestored', handleContextRestored);
+      }}
       camera={{ position: [maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32], fov: 40, far: Math.max(1000, maxSpan * 8) }}
     >
       <CameraRig maxSpan={maxSpan} center={center} />
