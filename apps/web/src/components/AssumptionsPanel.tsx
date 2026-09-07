@@ -7,6 +7,7 @@ import {
   type FormState,
 } from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
+import { computeZoneWidths } from '../lib/zoneWidths';
 import { ZONE_LABELS, type AnyZoneId } from '../lib/zoneColors';
 
 interface Props {
@@ -35,6 +36,8 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
   const { roof, walls, step } = result;
   const areas = zoneAreas(result);
   const stepped = isSteppedRoofResult(roof);
+  const widths = computeZoneWidths(result);
+  const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -193,15 +196,50 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
 
       <h3 style={SECTION_TITLE}>Zone areas</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
+            <th style={{ padding: '3px 0', textAlign: 'left', fontWeight: 600 }}>Zone</th>
+            <th style={{ padding: '3px 0', textAlign: 'right', fontWeight: 600 }}>Area</th>
+            <th style={{ padding: '3px 0 3px 10px', textAlign: 'right', fontWeight: 600 }}>Width</th>
+            {hasLegLength && (
+              <th style={{ padding: '3px 0 3px 10px', textAlign: 'right', fontWeight: 600 }}>Leg length</th>
+            )}
+          </tr>
+        </thead>
         <tbody>
-          {areas.map(({ zoneId, area }) => (
-            <tr key={zoneId} style={{ borderBottom: '1px solid var(--gridline)' }}>
-              <td style={{ padding: '3px 0' }}>{ZONE_LABELS[zoneId]}</td>
-              <td style={{ padding: '3px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                {area.toFixed(1)} ft²
-              </td>
-            </tr>
-          ))}
+          {areas.map(({ zoneId, area }) => {
+            const width = widths[zoneId];
+            return (
+              <tr key={zoneId} style={{ borderBottom: '1px solid var(--gridline)' }}>
+                <td style={{ padding: '3px 0' }}>{ZONE_LABELS[zoneId]}</td>
+                <td style={{ padding: '3px 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {area.toFixed(1)} ft²
+                </td>
+                <td
+                  style={{
+                    padding: '3px 0 3px 10px',
+                    textAlign: 'right',
+                    fontVariantNumeric: 'tabular-nums',
+                    color: width ? undefined : 'var(--text-muted)',
+                  }}
+                >
+                  {width?.width ?? '—'}
+                </td>
+                {hasLegLength && (
+                  <td
+                    style={{
+                      padding: '3px 0 3px 10px',
+                      textAlign: 'right',
+                      fontVariantNumeric: 'tabular-nums',
+                      color: width?.legLength ? undefined : 'var(--text-muted)',
+                    }}
+                  >
+                    {width?.legLength ?? '—'}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 

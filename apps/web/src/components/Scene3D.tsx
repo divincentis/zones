@@ -204,9 +204,10 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   // otherwise sit at almost the same point, since the width line's own
   // midpoint (at interiorX) is only "gap" away from true center.
   const lengthRowY = Math.min(roofMaxY - dIntY, roofMinY + dIntY + zone1PrimeWidth * 0.75);
-  // Leg-length tick sits just past the leg-width one so the two don't
-  // overlap, but never past the corner square's own edge.
-  const legLenOffset = Math.min(legW * 2.2, dEdgeY * 0.9);
+  // Leg length is drawn just outside the roof edge (rather than inset on the
+  // roof surface, like leg width) so it reads as an edge-run dimension —
+  // clear of the leg-width tick and of the roof surface itself.
+  const legLenOutset = Math.max(1, maxSpan * 0.02);
 
   return (
     <group>
@@ -219,8 +220,8 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
             color={AMBER}
           />
           <DimensionLine
-            from={at(nearX, nearY + dirY * legLenOffset)}
-            to={at(nearX + dirX * dEdgeX, nearY + dirY * legLenOffset)}
+            from={at(nearX, nearY - dirY * legLenOutset)}
+            to={at(nearX + dirX * dEdgeX, nearY - dirY * legLenOutset)}
             label={`Zone 3 leg length = 0.6h = ${dEdgeX.toFixed(2)} ft`}
             color={AMBER}
           />
@@ -674,8 +675,11 @@ function splitGableRoofPiece<P extends { zoneId: string; vertices: Vec2[] }>(
  * at each footprint corner. Drawn at ground level for the (up to 3)
  * corners visible from the current camera side; the one corner diagonally
  * opposite the camera is fully occluded by the building's own bulk at that
- * height, so its dimension is raised above the roofline instead — floating
- * clear of the model rather than reading as an x-ray line through it.
+ * height, so its dimension is raised above the roofline instead. That raise
+ * clears the roof from most angles, but not every one — so it's also drawn
+ * `occludable`, letting it hide naturally on the rare angle where the
+ * building still sits between it and the camera, rather than showing
+ * through.
  */
 function WallCornerDimensions({
   building,
@@ -751,6 +755,7 @@ function WallCornerDimensions({
                 from={at(outStart)}
                 to={at([outStart[0] + outDir[0] * outW, outStart[1] + outDir[1] * outW])}
                 color={RED}
+                occludable={isFarCorner}
               />
             )}
             {inW > 1e-6 && (
@@ -758,9 +763,16 @@ function WallCornerDimensions({
                 from={at(inStart)}
                 to={at([inStart[0] - inDir[0] * inW, inStart[1] - inDir[1] * inW])}
                 color={RED}
+                occludable={isFarCorner}
               />
             )}
-            <Html position={at(labelPos)} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+            <Html
+              position={at(labelPos)}
+              center
+              occlude={isFarCorner ? true : undefined}
+              style={{ pointerEvents: 'none' }}
+              zIndexRange={[100, 0]}
+            >
               <div
                 style={{
                   background: 'rgba(12,12,16,0.92)',
@@ -786,7 +798,7 @@ function WallCornerDimensions({
 }
 
 /**
- * Overall building footprint (L x B) and eave height, dimensioned further
+ * Overall building footprint (L x B) and height, dimensioned further
  * out than the per-zone dimensions so they read as the whole-building
  * envelope rather than another zone band. Anchored to whichever two edges
  * currently face the camera, so the lines sit in open ground in front of
@@ -808,7 +820,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   const width = maxY - minY;
 
   const outset = Math.max(3, maxSpan * 0.06);
-  // Pushed further out than outset so the Eave dimension, anchored at the
+  // Pushed further out than outset so the Height dimension, anchored at the
   // same near corner as L/B for consistency, doesn't stack on their labels.
   const cornerOutset = outset * 1.8;
   const { sx, sy } = facing;
@@ -836,14 +848,14 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
       <DimensionLine
         from={at([cornerX, cornerY], 0)}
         to={at([cornerX, cornerY], building.eaveHeight)}
-        label={`${step ? 'Eave (lower)' : 'Eave'} = ${building.eaveHeight.toFixed(1)} ft`}
+        label={`${step ? 'Height (lower)' : 'Height'} = ${building.eaveHeight.toFixed(1)} ft`}
         color={GREEN}
       />
       {step && (
         <DimensionLine
           from={at([cornerX + (sx > 0 ? outset : -outset), cornerY], 0)}
           to={at([cornerX + (sx > 0 ? outset : -outset), cornerY], step.upper.eaveHeight)}
-          label={`Eave (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
+          label={`Height (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
           color={GREEN}
         />
       )}

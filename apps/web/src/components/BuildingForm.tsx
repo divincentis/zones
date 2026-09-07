@@ -203,7 +203,7 @@ export function BuildingForm({ form, onChange }: Props) {
       </div>
       <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
       <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
-      <NumberField label="Eave height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
+      <NumberField label="Height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
 
       <div style={{ ...ROW_STYLE, display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
@@ -272,7 +272,7 @@ export function BuildingForm({ form, onChange }: Props) {
             onChange={(v) => set('stepDepth', v)}
           />
           <NumberField
-            label="Section 2 — eave height (ft)"
+            label="Section 2 — height (ft)"
             value={form.stepEaveHeight}
             min={0.1}
             onChange={(v) => set('stepEaveHeight', v)}

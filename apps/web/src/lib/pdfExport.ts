@@ -94,22 +94,22 @@ export function exportZonePdf(
       ].filter((line): line is string => line !== undefined)
     : isMonoslopeRoofResult(roof)
     ? [
-        `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (monoslope, high side: ${form.monoslopeHighSide})`,
+        `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (monoslope, high side: ${form.monoslopeHighSide})`,
         `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
         `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
         `High band/corner: ${roof.highBand.toFixed(2)}/${roof.highCornerBand.toFixed(2)} ft   ${roof.pitchBand === '3-10' ? `Low band/corner: ${roof.lowBand.toFixed(2)}/${roof.lowCornerBand.toFixed(2)} ft` : `Wrap band: ${roof.lowBand.toFixed(2)} ft`}`,
-        'Overhang and parapet are not yet modeled for monoslope roofs; wall zones use a uniform eave height on all four walls.',
+        'Overhang and parapet are not yet modeled for monoslope roofs; wall zones use a uniform height on all four walls.',
       ]
     : isSteepRoofResult(roof)
       ? [
-          `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (gable, ridge along ${form.ridgeAlong})`,
+          `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (gable, ridge along ${form.ridgeAlong})`,
           `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
           `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
           `Rake band: ${roof.rakeBand.toFixed(2)} ft   ${roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band: ${roof.ridgeOrEaveBand.toFixed(2)} ft`,
           'Overhang and parapet are not yet modeled for gable roofs.',
         ]
       : [
-          `Footprint: ${form.length} ft x ${form.width} ft, eave height ${form.eaveHeight} ft`,
+          `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft`,
           `Parapet height: ${form.parapetHeight} ft   Overhang depth: ${form.overhangDepth} ft`,
           `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
           `L_min: ${result.walls.a.lMin.toFixed(2)} ft   h (roof mean height): ${roof.h.toFixed(2)} ft`,
