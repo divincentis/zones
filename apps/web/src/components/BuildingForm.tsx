@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ABasis, RoofType } from '@zones/engine';
-import type { FormState, MonoslopeHighSideChoice, RidgeAxisChoice } from '../lib/buildModel';
+import type {
+  FormState,
+  MonoslopeHighSideChoice,
+  RidgeAxisChoice,
+  StepEdgeChoice,
+} from '../lib/buildModel';
 
 interface Props {
   form: FormState;
@@ -171,14 +176,20 @@ export function BuildingForm({ form, onChange }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     onChange({ ...form, [key]: value });
 
-  const hasRidge = form.roofType === 'gable' || form.roofType === 'hip';
-  const isMonoslope = form.roofType === 'monoslope';
-  const isFlat = form.roofType === 'flat';
+  const stepped = form.stepEnabled;
+  const hasRidge = !stepped && (form.roofType === 'gable' || form.roofType === 'hip');
+  const isMonoslope = !stepped && form.roofType === 'monoslope';
+  const isFlat = !stepped && form.roofType === 'flat';
+
+  // Along which of the primary rectangle's own dimensions the shared wall
+  // runs — the step's span and offset are measured along that wall.
+  const sharedWallLength =
+    form.stepEdge === 'widthFar' || form.stepEdge === 'widthNear' ? form.width : form.length;
 
   return (
     <div>
       <h2 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-        Building — Rectangle
+        Building — {stepped ? 'Stepped (two sections)' : 'Rectangle'}
       </h2>
       <div style={ROW_STYLE}>
         <label style={LABEL_STYLE}>Project name</label>
@@ -194,19 +205,105 @@ export function BuildingForm({ form, onChange }: Props) {
       <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
       <NumberField label="Eave height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
 
-      <div style={ROW_STYLE}>
-        <label style={LABEL_STYLE}>Roof type</label>
-        <select
-          style={FIELD_STYLE}
-          value={form.roofType}
-          onChange={(e) => set('roofType', e.target.value as RoofType)}
-        >
-          <option value="flat">Flat / low-slope (θ ≤ 7°)</option>
-          <option value="gable">Gable</option>
-          <option value="hip">Hip</option>
-          <option value="monoslope">Monoslope</option>
-        </select>
+      <div style={{ ...ROW_STYLE, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          id="stepped"
+          type="checkbox"
+          checked={stepped}
+          onChange={(e) =>
+            // FM 1-28 Fig. 3.2.2b/c are drawn for "adjoining low-sloped
+            // roofs" only, so turning a step on pins both sections flat
+            // rather than collecting a pitch the engine would reject.
+            onChange({ ...form, stepEnabled: e.target.checked, roofType: 'flat' })
+          }
+        />
+        <label htmlFor="stepped" style={{ ...LABEL_STYLE, margin: 0, cursor: 'pointer' }}>
+          Stepped building (second section at a different roof level)
+        </label>
       </div>
+
+      {!stepped && (
+        <div style={ROW_STYLE}>
+          <label style={LABEL_STYLE}>Roof type</label>
+          <select
+            style={FIELD_STYLE}
+            value={form.roofType}
+            onChange={(e) => set('roofType', e.target.value as RoofType)}
+          >
+            <option value="flat">Flat / low-slope (θ ≤ 7°)</option>
+            <option value="gable">Gable</option>
+            <option value="hip">Hip</option>
+            <option value="monoslope">Monoslope</option>
+          </select>
+        </div>
+      )}
+
+      {stepped && (
+        <>
+          <div style={ROW_STYLE}>
+            <label style={LABEL_STYLE}>Attaches to wall</label>
+            <select
+              style={FIELD_STYLE}
+              value={form.stepEdge}
+              onChange={(e) => set('stepEdge', e.target.value as StepEdgeChoice)}
+            >
+              <option value="widthFar">Width wall @ L = length</option>
+              <option value="widthNear">Width wall @ L = 0</option>
+              <option value="lengthFar">Length wall @ B = width</option>
+              <option value="lengthNear">Length wall @ B = 0</option>
+            </select>
+          </div>
+          <NumberField
+            label={`Section 2 — along shared wall (ft, max ${round2(sharedWallLength)})`}
+            value={form.stepSpan}
+            min={1}
+            onChange={(v) => set('stepSpan', v)}
+          />
+          <NumberField
+            label="Section 2 — offset along that wall (ft)"
+            value={form.stepOffset}
+            min={0}
+            onChange={(v) => set('stepOffset', v)}
+          />
+          <NumberField
+            label="Section 2 — depth out from the wall (ft)"
+            value={form.stepDepth}
+            min={1}
+            onChange={(v) => set('stepDepth', v)}
+          />
+          <NumberField
+            label="Section 2 — eave height (ft)"
+            value={form.stepEaveHeight}
+            min={0.1}
+            onChange={(v) => set('stepEaveHeight', v)}
+          />
+          <NumberField
+            label="Parapet height — section 1 (ft)"
+            value={form.parapetHeight}
+            min={0}
+            onChange={(v) => set('parapetHeight', v)}
+          />
+          <NumberField
+            label="Parapet height — section 2 (ft)"
+            value={form.stepParapetHeight}
+            min={0}
+            onChange={(v) => set('stepParapetHeight', v)}
+          />
+          <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
+            Both sections are flat / low-slope — FM 1-28 Fig. 3.2.2b/c cover &ldquo;adjoining
+            low-sloped roofs&rdquo; only, and no reviewed figure covers a pitched roof at an
+            abutment. A roof-level difference of{' '}
+            <strong>{Math.abs(form.stepEaveHeight - form.eaveHeight).toFixed(1)} ft</strong> means
+            the two are zoned as{' '}
+            {Math.abs(form.stepEaveHeight - form.eaveHeight) >= 10
+              ? 'two separate roofs (Fig. 3.2.2b)'
+              : 'one roof over the combined footprint (Fig. 3.2.2c)'}
+            . The sections must actually touch: any horizontal separation, a corner-only touch, or
+            an overlap in plan is reported as an error rather than computed past. Overhangs
+            aren&apos;t modeled at an abutment.
+          </div>
+        </>
+      )}
 
       {hasRidge && (
         <>

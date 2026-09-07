@@ -1,6 +1,6 @@
 import type { AnyZoneId } from './zoneColors';
 import type { ComputationResult } from './buildModel';
-import { isMonoslopeRoofResult, isSteepRoofResult } from './buildModel';
+import { isMonoslopeRoofResult, isSteepRoofResult, isSteppedRoofResult } from './buildModel';
 
 export interface HoverInfo {
   zoneId: AnyZoneId;
@@ -51,6 +51,37 @@ export function describeRoofHover(
     return { zoneId, source: 'roof', area, note: parts.join(' · ') };
   }
 
+  if (isSteppedRoofResult(roof)) {
+    const parts = [
+      roof.treatment === 'separate'
+        ? `roof elevations differ by ${roof.heightDifference.toFixed(1)} ft (>= ${roof.threshold} ft) — zoned as two roofs, Fig. 3.2.2b`
+        : `roof elevations differ by ${roof.heightDifference.toFixed(1)} ft (< ${roof.threshold} ft) — zoned as one roof, Fig. 3.2.2c`,
+    ];
+    parts.push(
+      roof.regions
+        .map((r) => `${r.role} h = ${r.h.toFixed(2)} ft (0.6h = ${r.dEdge.toFixed(2)} ft)`)
+        .join('; ')
+    );
+    if (zoneId === '2' && roof.parapetCreditsCorners) {
+      parts.push('includes corner areas credited from Zone 3 (parapet >= 3 ft on both sections, Table 3.2.2a note 2)');
+    }
+    if (zoneId === '1' || zoneId === "1'") {
+      parts.push(
+        roof.regions
+          .map(
+            (r) =>
+              `${r.role}: Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (Lmin ${r.lMin.toFixed(1)} vs 2.4h = ${r.wideThreshold.toFixed(1)} ft)`
+          )
+          .join('; ')
+      );
+    }
+    if (roof.hBasis === 'tallerSection') {
+      parts.push("combined-roof h taken from the taller section (conservative — the figure doesn't say)");
+    }
+    parts.push(roof.source);
+    return { zoneId, source: 'roof', area, note: parts.join(' · ') };
+  }
+
   const parts = [`h = ${roof.h.toFixed(2)} ft`];
   if (zoneId === '2' || zoneId === '3') {
     parts.push(`edge band = 0.6h = ${roof.dEdge.toFixed(2)} ft`);
@@ -72,12 +103,15 @@ export function describeRoofHover(
 export function describeWallHover(
   zoneId: AnyZoneId,
   area: number,
-  walls: ComputationResult['walls']
+  walls: ComputationResult['walls'],
+  /** Which section's wall this is — set for stepped buildings, where each section has its own `a`. */
+  sectionLabel?: string
 ): HoverInfo {
+  const a = `a = ${walls.a.a.toFixed(2)} ft (${walls.a.governingBranch}, basis: ${walls.a.aBasis})`;
   return {
     zoneId,
     source: 'wall',
     area,
-    note: `a = ${walls.a.a.toFixed(2)} ft (${walls.a.governingBranch}, basis: ${walls.a.aBasis})`,
+    note: sectionLabel ? `${sectionLabel}: ${a}` : a,
   };
 }

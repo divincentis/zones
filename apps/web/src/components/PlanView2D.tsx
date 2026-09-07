@@ -87,7 +87,10 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
   const labelAreaThreshold = (width * height) / 400;
 
   // Overall building footprint (not the roof's overhang-extended bbox), so
-  // these read as the building's actual length/width.
+  // these read as the building's actual length/width. For a stepped building
+  // `building` is the lower section, so the call-outs are labelled as that
+  // section's rather than the whole (L-shaped) footprint's.
+  const sectionLabel = result.step ? ' (lower)' : '';
   const bv0 = building.vertices[0]!;
   const bv1 = building.vertices[1]!;
   const bv3 = building.vertices[3]!;
@@ -102,7 +105,7 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
         y1={flipY(minY) + dimMargin}
         x2={bv1[0]}
         y2={flipY(minY) + dimMargin}
-        label={`L = ${buildingLength.toFixed(1)} ft`}
+        label={`L${sectionLabel} = ${buildingLength.toFixed(1)} ft`}
         tickSize={dimTick}
         fontSize={fontSize}
         labelSide={1}
@@ -112,7 +115,7 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
         y1={flipY(bv0[1])}
         x2={minX - dimMargin}
         y2={flipY(bv3[1])}
-        label={`B = ${buildingWidth.toFixed(1)} ft`}
+        label={`B${sectionLabel} = ${buildingWidth.toFixed(1)} ft`}
         tickSize={dimTick}
         fontSize={fontSize}
         labelSide={-1}

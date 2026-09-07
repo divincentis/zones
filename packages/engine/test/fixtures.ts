@@ -117,6 +117,38 @@ export function monoslopeRoofBuilding(opts: {
   };
 }
 
+/**
+ * A flat-roof rectangle placed at an arbitrary origin — for stepped-building
+ * fixtures, where the second section can't start at (0,0). Vertices are CCW
+ * in the same orientation as `rectangle`.
+ */
+export function flatRoofSection(opts: {
+  id: string;
+  x: number;
+  y: number;
+  length: number;
+  width: number;
+  eaveHeight: number;
+  parapetHeight?: number;
+}): FootprintNode {
+  return {
+    id: opts.id,
+    vertices: [
+      [opts.x, opts.y],
+      [opts.x + opts.length, opts.y],
+      [opts.x + opts.length, opts.y + opts.width],
+      [opts.x, opts.y + opts.width],
+    ],
+    eaveHeight: opts.eaveHeight,
+    roofType: 'flat',
+    roof: {
+      pitchDegrees: 0,
+      overhangDepth: 0,
+      parapetHeight: opts.parapetHeight ?? 0,
+    },
+  };
+}
+
 export function flatRoofBuilding(opts: {
   length: number;
   width: number;

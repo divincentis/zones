@@ -9,3 +9,5 @@ export * from './ridgeGeometry.js';
 export * from './monoslopeGeometry.js';
 export * from './monoslopeRoofZones.js';
 export * from './steepRoofZones.js';
+export * from './steppedRoofZones.js';
+export * from './steppedWallZones.js';
