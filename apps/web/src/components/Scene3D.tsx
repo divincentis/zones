@@ -66,7 +66,7 @@ function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
   const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
 
   useEffect(() => {
-    camera.position.set(maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1);
+    camera.position.set(maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32);
     camera.near = 0.1;
     camera.far = Math.max(1000, maxSpan * 8);
     camera.updateProjectionMatrix();
@@ -153,10 +153,12 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
   const dEdgeY = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
   const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
   const dIntY = Math.min(roof.dInterior, (roofMaxY - roofMinY) / 2);
-  // Zone 1's own span (both interior boundaries), not the edge-to-boundary
-  // setback — the setback is already shown by the 0.6h band dimension, so
-  // measuring it again from the roof edge just double-counts that band.
-  const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
+  // When Zone 1' exists, it's the field beyond both 1.2h interior boundaries
+  // — that's the span this dimension needs to report. When it doesn't, Zone
+  // 1 itself continues all the way in from the 0.6h edge band (there's no
+  // further inset), so the span to report is bounded by dEdgeY, not dIntY.
+  const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
+  const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
 
   const y = building.eaveHeight + Math.max(0.3, maxSpan * 0.004);
@@ -198,12 +200,21 @@ function RoofDimensions({ result, maxSpan, facing }: { result: ComputationResult
         label={`0.6h band = ${dEdgeY.toFixed(2)} ft`}
         color={AMBER}
       />
-      <DimensionLine
-        from={at(interiorX, roofMinY + dIntY)}
-        to={at(interiorX, roofMaxY - dIntY)}
-        label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
-        color={BLUE}
-      />
+      {roof.hasZone1Prime ? (
+        <DimensionLine
+          from={at(interiorX, roofMinY + dIntY)}
+          to={at(interiorX, roofMaxY - dIntY)}
+          label={`Zone 1' width = ${zone1PrimeWidth.toFixed(2)} ft`}
+          color={BLUE}
+        />
+      ) : (
+        <DimensionLine
+          from={at(interiorX, roofMinY + dEdgeY)}
+          to={at(interiorX, roofMaxY - dEdgeY)}
+          label={`Zone 1 width = ${zone1Width.toFixed(2)} ft`}
+          color={BLUE}
+        />
+      )}
     </group>
   );
 }
@@ -680,7 +691,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady }: Props) {
     <Canvas
       gl={{ preserveDrawingBuffer: true }}
       onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
-      camera={{ position: [maxSpan * 0.9, maxSpan * 0.75, maxSpan * 1.1], fov: 40, far: Math.max(1000, maxSpan * 8) }}
+      camera={{ position: [maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32], fov: 40, far: Math.max(1000, maxSpan * 8) }}
     >
       <CameraRig maxSpan={maxSpan} center={center} />
       <FacingTracker center={center} onChange={setFacing} />
