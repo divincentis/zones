@@ -4,6 +4,7 @@ import { PlanView2D } from './components/PlanView2D';
 import { Scene3D } from './components/Scene3D';
 import { ZoneLegend } from './components/ZoneLegend';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
+import { DisclaimerModal } from './components/DisclaimerModal';
 import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
 import { exportZonePdf } from './lib/pdfExport';
@@ -17,11 +18,15 @@ export function App() {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   /** Board width (ft) to round zone widths up to for takeoff, e.g. 4 or 8 ft. null = off. */
   const [boardSize, setBoardSize] = useState<number | null>(null);
+  const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
 
   const outcome = useMemo(() => computeZones(form), [form]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 260px', height: '100%' }}>
+      {!disclaimerAcknowledged && (
+        <DisclaimerModal onAcknowledge={() => setDisclaimerAcknowledged(true)} />
+      )}
       <aside
         style={{
           borderRight: '1px solid var(--border)',
