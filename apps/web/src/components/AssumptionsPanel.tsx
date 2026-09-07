@@ -14,6 +14,9 @@ interface Props {
   result: ComputationResult;
   form: FormState;
   hovered: HoverInfo | null;
+  /** Board width (ft) to round zone widths up to for takeoff. null = off. */
+  boardSize: number | null;
+  onBoardSizeChange: (boardSize: number | null) => void;
 }
 
 function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
@@ -32,11 +35,11 @@ function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: 
     .filter((z) => z.area > 0);
 }
 
-export function AssumptionsPanel({ result, form, hovered }: Props) {
+export function AssumptionsPanel({ result, form, hovered, boardSize, onBoardSizeChange }: Props) {
   const { roof, walls, step } = result;
   const areas = zoneAreas(result);
   const stepped = isSteppedRoofResult(roof);
-  const widths = computeZoneWidths(result);
+  const widths = computeZoneWidths(result, boardSize ?? undefined);
   const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
 
   return (
@@ -195,6 +198,39 @@ export function AssumptionsPanel({ result, form, hovered }: Props) {
       )}
 
       <h3 style={SECTION_TITLE}>Zone areas</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={boardSize !== null}
+            onChange={(e) => onBoardSizeChange(e.target.checked ? 4 : null)}
+          />
+          Round widths up to boards
+        </label>
+        {boardSize !== null && (
+          <>
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={boardSize}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                onBoardSizeChange(v > 0 ? v : boardSize);
+              }}
+              style={{
+                width: 44,
+                background: 'var(--surface-2)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: 3,
+                padding: '1px 4px',
+              }}
+            />
+            <span>ft</span>
+          </>
+        )}
+      </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
