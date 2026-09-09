@@ -1,94 +1,65 @@
-# Deploying to zbcad.com/zones
+# Deploying zones to zbcad.com/zones
 
-This project builds to a static SPA (`apps/web`, Vite + React + Three.js).
-zbcad.com is served by GitHub Pages directly off the `master` branch root of
-the `zbCAD` repo (plain `index.html`/`cad.html` files, no build step, no
-`.github/workflows`). Since Pages serves everything under that branch root,
-the wind-zones app just needs its built output dropped into a `zones/`
-folder inside the `zbCAD` repo — no changes to zbCAD's Pages settings are
-needed.
+This project (`apps/web`, Vite + React + Three.js) builds to a static SPA
+that gets served as part of the `zbCAD` GitHub Pages site, under a `/zones`
+subfolder.
 
-There are two parts: (1) create the new `zones` GitHub repo for this
-project's source, and (2) get its production build into `zbCAD/zones/`.
+## Key facts about this setup
 
-## 1. Create the GitHub repo for this project
+- **zbCAD has no local clone.** There is no `/home/matt/projects/zbCAD`
+  folder on this machine. All updates to that repo happen through GitHub's
+  web UI (github.com), not git push.
+- **zbCAD is served by GitHub Pages** directly off the `master` branch root
+  — plain static files, no build step, no `.github/workflows`.
+- **The `zones` project (this repo) is a local git repo, not currently
+  pushed to GitHub.** A `zbcad-zones` GitHub repo exists to mirror it
+  eventually, but `git push` is currently failing there (auth/token issue,
+  unresolved as of this writing) — so for now, commits stay local only.
+  Source history lives on this machine; there is no GitHub backup of it
+  yet. This is unrelated to the zbCAD repo except that this project's
+  build output gets copied over to it.
+- **Vite is configured for the `/zones/` subpath.** `apps/web/vite.config.ts`
+  sets `base: command === 'build' ? '/zones/' : '/'` — already done, don't
+  touch it unless the deploy path changes.
+- **Vite build filenames are content-hashed** (`index-a1b2c3.js` etc), so
+  re-uploading does not overwrite old files — stale files must be manually
+  deleted from GitHub first or they'll accumulate.
+- **`zones/index.html`** is what GitHub Pages serves by default at
+  `zbcad.com/zones/`.
 
-```bash
-cd /home/matt/projects/zones
-gh repo create zbcad-zones --private --source=. --remote=origin
-# or --public, depending on your preference
-git add -A
-git commit -m "Initial commit"
-git push -u origin main
-```
+## Deploy steps (manual upload, current process)
 
-(Pick whatever repo name you like — it doesn't have to match the URL path.
-`/zones` in the URL comes from the folder name inside `zbCAD`, set in step 3,
-not from this repo's name.)
+1. Build:
+   ```bash
+   cd /home/matt/projects/zones
+   npm run build --workspace=packages/engine
+   npm run build --workspace=apps/web
+   ```
+   Output lands in `apps/web/dist/`.
 
-## 2. Set the Vite base path
+2. Rename the output folder to `zones` locally:
+   ```bash
+   cd apps/web
+   rm -rf zones && mv dist zones
+   ```
 
-Because the app will be served from `zbcad.com/zones/` instead of the
-domain root, Vite needs to know the subpath so built asset URLs
-(`/assets/...`) resolve correctly instead of 404ing at the domain root.
+3. On github.com, open the `zbCAD` repo, go into the existing `zones/`
+   folder (if present), select all files, and delete them (commit the
+   deletion). This clears out old hashed filenames before the new upload.
 
-This is already done in `apps/web/vite.config.ts` — `base` is set to
-`/zones/` for production builds only (dev server URLs stay at `/` so `npm
-run dev` is unaffected):
+4. From the `zbCAD` repo root, **Add file → Upload files**, drag the local
+   `zones` folder onto the drop area. GitHub preserves folder structure, so
+   it lands at `zbCAD/zones/...`. Commit directly to `master`.
 
-```ts
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/zones/' : '/',
-  ...
-}));
-```
+5. GitHub Pages rebuilds automatically — live at `https://zbcad.com/zones/`
+   usually within a minute.
 
-## 3. Build and copy into zbCAD
+## Not currently done, but could be later
 
-Since neither repo currently has CI, the simplest approach is a manual build
-+ copy, matching how zbCAD itself is already deployed (committed static
-files, no pipeline). This takes under a minute per release.
-
-```bash
-# From the zones repo
-cd /home/matt/projects/zones
-npm run build --workspace=packages/engine
-npm run build --workspace=apps/web
-
-# Copy the build output into zbCAD
-rm -rf /home/matt/projects/zbCAD/zones
-cp -r apps/web/dist /home/matt/projects/zbCAD/zones
-
-# Commit and push from zbCAD as usual
-cd /home/matt/projects/zbCAD
-git add zones
-git commit -m "Deploy wind zones app to /zones"
-git push
-```
-
-GitHub Pages will rebuild automatically and the app will be live at
-`https://zbcad.com/zones/` shortly after the push (usually under a minute).
-
-Add a link to it from `zbCAD/index.html` or `docs.html` whenever you're
-ready to surface it to visitors.
-
-## 4. (Optional) Automate the copy step later
-
-If you start updating the zones app often enough that the manual copy gets
-tedious, a GitHub Actions workflow in the `zones` repo can build it and push
-the `dist/` output straight into `zbCAD` on every push to `main`. That needs
-a personal access token with `contents:write` on `zbCAD`, stored as a repo
-secret (e.g. `ZBCAD_DEPLOY_TOKEN`) in the `zones` repo, since the default
-`GITHUB_TOKEN` can't write to a different repo. Ask for this when you're
-ready to set it up — it's a bigger jump in moving parts (secrets, a token to
-rotate, a cross-repo push) than the current setup warrants for occasional
-releases.
-
-## Notes
-
-- The app has no client-side router, so there's no need for the GitHub
-  Pages SPA-fallback (`404.html`) trick — a plain static folder is enough.
-- `apps/web/dist/` is gitignored in this repo (as it should be) but the copy
-  *into* `zbCAD/zones/` is a normal tracked directory there — it's a build
-  artifact from this repo's perspective, but source-of-truth-for-Pages from
-  zbCAD's.
+A GitHub Actions workflow in the `zones` repo could build and push straight
+into `zbCAD` on every push to `main`, removing the manual
+build/rename/upload steps. This needs a personal access token with
+`contents:write` on `zbCAD`, stored as a secret in the `zones` repo (the
+default `GITHUB_TOKEN` can't write to a different repo). Worth revisiting
+if updates become frequent enough that the manual copy gets tedious — not
+needed for occasional releases.
