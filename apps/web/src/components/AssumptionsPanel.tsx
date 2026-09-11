@@ -236,9 +236,9 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
                     >
                       <span
                         style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 2,
+                          width: 15,
+                          height: 15,
+                          borderRadius: 3,
                           background: colors[zoneId],
                           flexShrink: 0,
                         }}

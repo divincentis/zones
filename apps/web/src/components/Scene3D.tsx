@@ -863,13 +863,18 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   const width = maxY - minY;
 
   const outset = Math.max(3, maxSpan * 0.06);
-  // Pushed further out than outset so the Height dimension, anchored at the
-  // same near corner as L/B for consistency, doesn't stack on their labels.
+  // Pushed further out than outset so the Height dimension doesn't stack on
+  // the L/B labels.
   const cornerOutset = outset * 1.8;
   const { sx, sy } = facing;
   const lineY = sy > 0 ? maxY + outset : minY - outset;
   const lineX = sx > 0 ? maxX + outset : minX - outset;
-  const cornerX = sx > 0 ? maxX + cornerOutset : minX - cornerOutset;
+  // L and B track which side the camera is currently on so they stay in
+  // open ground in front of the viewer. Height instead stays pinned to the
+  // building's minX side (the left of the viewport at the app's default
+  // camera angle) regardless of orbiting — a fixed elevation convention
+  // rather than one that jumps around and lands on the camera's near side.
+  const cornerX = minX - cornerOutset;
   const cornerY = sy > 0 ? maxY + cornerOutset : minY - cornerOutset;
 
   const at = (p: Vec2, height = 0): Vec3 => planToWorld(p, height);
@@ -896,8 +901,8 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
       />
       {step && (
         <DimensionLine
-          from={at([cornerX + (sx > 0 ? outset : -outset), cornerY], 0)}
-          to={at([cornerX + (sx > 0 ? outset : -outset), cornerY], step.upper.eaveHeight)}
+          from={at([cornerX - outset, cornerY], 0)}
+          to={at([cornerX - outset, cornerY], step.upper.eaveHeight)}
           label={`Height (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
           color={GREEN}
         />

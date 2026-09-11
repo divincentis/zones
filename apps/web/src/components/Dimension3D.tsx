@@ -12,12 +12,14 @@ interface DimensionLineProps {
 
 /**
  * A CAD-style dimension line: a segment with perpendicular end ticks and an
- * optional floating label. Drawn with `depthTest={false}` and a high
- * `renderOrder` so it always reads clearly on top of the zone/envelope
- * meshes instead of getting partially buried in them, which is what made
- * dimensions hard to see and to associate with a specific zone. The label
- * registers with the nearest LabelCollisionProvider so it nudges out of the
- * way of any other dimension label it would otherwise overlap on screen.
+ * optional floating label. Depth-tested against the zone/envelope meshes (so
+ * a line on the far side of the building is correctly hidden behind it)
+ * but drawn with a small negative `polygonOffset` bias and a high
+ * `renderOrder` so it still wins the depth test against surfaces it sits
+ * flush against, rather than z-fighting or getting partially buried in them.
+ * The label registers with the nearest LabelCollisionProvider so it nudges
+ * out of the way of any other dimension label it would otherwise overlap on
+ * screen.
  */
 export function DimensionLine({ from, to, label, color = '#333333' }: DimensionLineProps) {
   const labelRef = useCollidableLabelRef();
@@ -41,7 +43,10 @@ export function DimensionLine({ from, to, label, color = '#333333' }: DimensionL
   const lineProps = {
     color,
     lineWidth: 2.25,
-    depthTest: false,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
     renderOrder: 999,
   };
 
