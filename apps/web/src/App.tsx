@@ -19,7 +19,7 @@ export function App() {
   const [boardSize, setBoardSize] = useState<number | null>(null);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
 
-  const outcome = useMemo(() => computeZones(form), [form]);
+  const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 260px', height: '100%' }}>

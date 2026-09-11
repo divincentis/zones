@@ -241,13 +241,13 @@ export type ComputationOutcome =
   | { ok: true; result: ComputationResult }
   | { ok: false; error: string };
 
-export function computeZones(form: FormState): ComputationOutcome {
+export function computeZones(form: FormState, boardSize?: number): ComputationOutcome {
   try {
     const building = buildFootprint(form);
 
     if (form.stepEnabled) {
       const second = buildStepSection(form);
-      const roof = computeSteppedRoofZones([building, second], form.aBasis);
+      const roof = computeSteppedRoofZones([building, second], form.aBasis, boardSize);
       // computeSteppedRoofZones identifies lower/upper by elevation, which may
       // not be the order they were passed in — follow its answer rather than
       // assuming the primary section is the lower one.
@@ -284,9 +284,14 @@ export function computeZones(form: FormState): ComputationOutcome {
       // 3°-30° uses its own figures (Fig 3.4.1a/b) — a narrower low-slope
       // cutoff than gable/hip's 7°.
       roof =
-        pitch <= 3 ? computeLowSlopeRoofZones(building, form.aBasis) : computeMonoslopeRoofZones(building, form.aBasis);
+        pitch <= 3
+          ? computeLowSlopeRoofZones(building, form.aBasis, boardSize)
+          : computeMonoslopeRoofZones(building, form.aBasis, boardSize);
     } else {
-      roof = pitch <= 7 ? computeLowSlopeRoofZones(building, form.aBasis) : computeSteepRoofZones(building, form.aBasis);
+      roof =
+        pitch <= 7
+          ? computeLowSlopeRoofZones(building, form.aBasis, boardSize)
+          : computeSteepRoofZones(building, form.aBasis, boardSize);
     }
     const walls = computeWallZones(building, form.aBasis);
     return { ok: true, result: { building, roof, walls } };

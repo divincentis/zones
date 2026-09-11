@@ -2,7 +2,7 @@ import type { ABasis, FootprintNode } from './types.js';
 import { localRectToWorld } from './geometry.js';
 import { resolveMonoslopeGeometry } from './monoslopeGeometry.js';
 import { computeA, type AResult } from './aParameter.js';
-import { isDegenerateRect, rectArea, type ZonePiece } from './zoneTypes.js';
+import { isDegenerateRect, rectArea, roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Monoslope roof zone geometry, per FM Global 1-28 §3.4.1 and
@@ -72,7 +72,9 @@ function isDegenerate(b: Bounds, tol = 1e-9): boolean {
 
 export function computeMonoslopeRoofZones(
   node: FootprintNode,
-  aBasis: ABasis
+  aBasis: ABasis,
+  /** Board width (ft) to round the band distances up to before laying out zone geometry — see the equivalent param on computeLowSlopeRoofZones. Returned band fields stay exact regardless. */
+  boardSize?: number
 ): MonoslopeRoofZoneResult {
   const pitch = node.roof.pitchDegrees;
   if (pitch <= 3 || pitch > 30) {
@@ -99,6 +101,13 @@ export function computeMonoslopeRoofZones(
   const highCornerBand = Math.min(4 * a.a, rakeExtent / 2);
   const lowBand = Math.min(a.a, span / 2);
 
+  // Board-rounded distances drive the actual piece geometry below; the exact
+  // values above are what's returned in the summary.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const highBandGeom = Math.min(round(2 * a.a), span / 2);
+  const highCornerBandGeom = Math.min(round(4 * a.a), rakeExtent / 2);
+  const lowBandGeom = Math.min(round(a.a), span / 2);
+
   const pieces: ZonePiece[] = [];
   const addPiece = (zoneId: MonoslopeRoofZoneId, b: Bounds) => {
     if (isDegenerate(b)) return;
@@ -122,52 +131,53 @@ export function computeMonoslopeRoofZones(
   };
 
   // --- High edge: Zone 3' corners (2a x 4a) + Zone 2' middle band (2a) ---
-  addPiece('3', { xMin: 0, xMax: highBand, yMin: 0, yMax: highCornerBand });
-  addPiece('3', { xMin: 0, xMax: highBand, yMin: rakeExtent - highCornerBand, yMax: rakeExtent });
-  if (rakeExtent - highCornerBand > highCornerBand) {
-    addPiece('2', { xMin: 0, xMax: highBand, yMin: highCornerBand, yMax: rakeExtent - highCornerBand });
+  addPiece('3', { xMin: 0, xMax: highBandGeom, yMin: 0, yMax: highCornerBandGeom });
+  addPiece('3', { xMin: 0, xMax: highBandGeom, yMin: rakeExtent - highCornerBandGeom, yMax: rakeExtent });
+  if (rakeExtent - highCornerBandGeom > highCornerBandGeom) {
+    addPiece('2', { xMin: 0, xMax: highBandGeom, yMin: highCornerBandGeom, yMax: rakeExtent - highCornerBandGeom });
   }
 
   if (pitch <= 10) {
     // --- Fig 3.4.1a: low edge gets 2a x 2a corners, but only an `a`-wide
     // middle band — Zone 1 steps in to fill the gap away from the corners.
     const lowCornerBand = Math.min(2 * a.a, rakeExtent / 2);
-    addPiece('3', { xMin: span - lowCornerBand, xMax: span, yMin: 0, yMax: lowCornerBand });
+    const lowCornerBandGeom = Math.min(round(2 * a.a), rakeExtent / 2);
+    addPiece('3', { xMin: span - lowCornerBandGeom, xMax: span, yMin: 0, yMax: lowCornerBandGeom });
     addPiece('3', {
-      xMin: span - lowCornerBand,
+      xMin: span - lowCornerBandGeom,
       xMax: span,
-      yMin: rakeExtent - lowCornerBand,
+      yMin: rakeExtent - lowCornerBandGeom,
       yMax: rakeExtent,
     });
-    if (rakeExtent - lowCornerBand > lowCornerBand) {
+    if (rakeExtent - lowCornerBandGeom > lowCornerBandGeom) {
       addPiece('2', {
-        xMin: span - lowBand,
+        xMin: span - lowBandGeom,
         xMax: span,
-        yMin: lowCornerBand,
-        yMax: rakeExtent - lowCornerBand,
+        yMin: lowCornerBandGeom,
+        yMax: rakeExtent - lowCornerBandGeom,
       });
     }
 
     // Zone 1: stepped near the low edge (2a from edge near the low
     // corners, a from edge in the field between them).
     addPiece('1', {
-      xMin: highBand,
-      xMax: span - lowCornerBand,
+      xMin: highBandGeom,
+      xMax: span - lowCornerBandGeom,
       yMin: 0,
-      yMax: Math.min(lowCornerBand, rakeExtent / 2),
+      yMax: Math.min(lowCornerBandGeom, rakeExtent / 2),
     });
     addPiece('1', {
-      xMin: highBand,
-      xMax: span - lowCornerBand,
-      yMin: Math.max(rakeExtent - lowCornerBand, rakeExtent / 2),
+      xMin: highBandGeom,
+      xMax: span - lowCornerBandGeom,
+      yMin: Math.max(rakeExtent - lowCornerBandGeom, rakeExtent / 2),
       yMax: rakeExtent,
     });
-    if (rakeExtent - lowCornerBand > lowCornerBand) {
+    if (rakeExtent - lowCornerBandGeom > lowCornerBandGeom) {
       addPiece('1', {
-        xMin: highBand,
-        xMax: span - lowBand,
-        yMin: lowCornerBand,
-        yMax: rakeExtent - lowCornerBand,
+        xMin: highBandGeom,
+        xMax: span - lowBandGeom,
+        yMin: lowCornerBandGeom,
+        yMax: rakeExtent - lowCornerBandGeom,
       });
     }
 
@@ -185,11 +195,11 @@ export function computeMonoslopeRoofZones(
 
   // --- Fig 3.4.1b: low edge + both ridge-parallel edges share one
   // uniform `a`-wide Zone 2 wrap band; no separate low corner zone.
-  addPiece('2', { xMin: highBand, xMax: span, yMin: rakeExtent - lowBand, yMax: rakeExtent }); // "top"
-  addPiece('2', { xMin: highBand, xMax: span, yMin: 0, yMax: lowBand }); // "bottom"
-  if (rakeExtent - 2 * lowBand > 0) {
-    addPiece('2', { xMin: span - lowBand, xMax: span, yMin: lowBand, yMax: rakeExtent - lowBand }); // low edge
-    addPiece('1', { xMin: highBand, xMax: span - lowBand, yMin: lowBand, yMax: rakeExtent - lowBand });
+  addPiece('2', { xMin: highBandGeom, xMax: span, yMin: rakeExtent - lowBandGeom, yMax: rakeExtent }); // "top"
+  addPiece('2', { xMin: highBandGeom, xMax: span, yMin: 0, yMax: lowBandGeom }); // "bottom"
+  if (rakeExtent - 2 * lowBandGeom > 0) {
+    addPiece('2', { xMin: span - lowBandGeom, xMax: span, yMin: lowBandGeom, yMax: rakeExtent - lowBandGeom }); // low edge
+    addPiece('1', { xMin: highBandGeom, xMax: span - lowBandGeom, yMin: lowBandGeom, yMax: rakeExtent - lowBandGeom });
   }
 
   return {

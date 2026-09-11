@@ -2,7 +2,7 @@ import type { ABasis, FootprintNode } from './types.js';
 import { localRectToWorld } from './geometry.js';
 import { resolveRidgeGeometry } from './ridgeGeometry.js';
 import { computeA, type AResult } from './aParameter.js';
-import { isDegenerateRect, rectArea, type ZonePiece } from './zoneTypes.js';
+import { isDegenerateRect, rectArea, roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Gable roof zone geometry, θ > 7°, per FM Global 1-28 Fig. 3.2.2d-1
@@ -59,7 +59,12 @@ function isDegenerate(b: Bounds, tol = 1e-9): boolean {
   return isDegenerateRect(b.rakeMin, b.rakeMax, b.ridgeMin, b.ridgeMax, tol);
 }
 
-export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): SteepRoofZoneResult {
+export function computeSteepRoofZones(
+  node: FootprintNode,
+  aBasis: ABasis,
+  /** Board width (ft) to round the rake/ridge band distances up to before laying out zone geometry — see the equivalent param on computeLowSlopeRoofZones. Returned `rakeBand`/`ridgeOrEaveBand` stay exact regardless. */
+  boardSize?: number
+): SteepRoofZoneResult {
   const pitch = node.roof.pitchDegrees;
   if (pitch <= 7 || pitch > 45) {
     throw new Error(
@@ -80,6 +85,12 @@ export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): Stee
   const ridgeOrEaveBand = Math.min(a.a, perpExtent / 2);
   const ridgeCenter = perpExtent / 2;
 
+  // Board-rounded distances drive the actual piece geometry below; the exact
+  // values above are what's returned in the summary.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const rakeBandGeom = Math.min(round(a.a), rakeExtent / 2);
+  const ridgeOrEaveBandGeom = Math.min(round(a.a), perpExtent / 2);
+
   const pieces: ZonePiece[] = [];
   const addPiece = (zoneId: SteepRoofZoneId, b: Bounds) => {
     if (isDegenerate(b)) return;
@@ -94,14 +105,14 @@ export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): Stee
     });
   };
 
-  const rakeLoNear = { min: 0, max: rakeBand };
-  const rakeHiNear = { min: rakeExtent - rakeBand, max: rakeExtent };
-  const rakeFieldMin = rakeBand;
-  const rakeFieldMax = rakeExtent - rakeBand;
+  const rakeLoNear = { min: 0, max: rakeBandGeom };
+  const rakeHiNear = { min: rakeExtent - rakeBandGeom, max: rakeExtent };
+  const rakeFieldMin = rakeBandGeom;
+  const rakeFieldMax = rakeExtent - rakeBandGeom;
 
   if (pitch <= 27) {
     // Fig. 3.2.2d-1: Zone 3 at ridge x rake overlap; Zone 2 in either band alone.
-    const ridgeNear = { min: ridgeCenter - ridgeOrEaveBand, max: ridgeCenter + ridgeOrEaveBand };
+    const ridgeNear = { min: ridgeCenter - ridgeOrEaveBandGeom, max: ridgeCenter + ridgeOrEaveBandGeom };
 
     for (const rakeNear of [rakeLoNear, rakeHiNear]) {
       // Zone 3: near this rake AND near the ridge.
@@ -165,19 +176,19 @@ export function computeSteepRoofZones(node: FootprintNode, aBasis: ABasis): Stee
       rakeMin: rakeNear.min,
       rakeMax: rakeNear.max,
       ridgeMin: 0,
-      ridgeMax: ridgeOrEaveBand,
+      ridgeMax: ridgeOrEaveBandGeom,
     });
     addPiece('3', {
       rakeMin: rakeNear.min,
       rakeMax: rakeNear.max,
-      ridgeMin: perpExtent - ridgeOrEaveBand,
+      ridgeMin: perpExtent - ridgeOrEaveBandGeom,
       ridgeMax: perpExtent,
     });
     addPiece('2', {
       rakeMin: rakeNear.min,
       rakeMax: rakeNear.max,
-      ridgeMin: ridgeOrEaveBand,
-      ridgeMax: perpExtent - ridgeOrEaveBand,
+      ridgeMin: ridgeOrEaveBandGeom,
+      ridgeMax: perpExtent - ridgeOrEaveBandGeom,
     });
   }
 

@@ -34,3 +34,13 @@ export function rectArea(min1: number, max1: number, min2: number, max2: number)
 export function isDegenerateRect(min1: number, max1: number, min2: number, max2: number, tol = 1e-9): boolean {
   return max1 - min1 <= tol || max2 - min2 <= tol;
 }
+
+/**
+ * Rounds n up to the next multiple of boardSize, e.g. for board-coverage
+ * takeoff (roofers order whole boards, commonly 4 ft or 8 ft). Shared by the
+ * roof-zone algorithms (which round the edge-band distances that drive zone
+ * geometry when a boardSize is supplied) and the UI layer (which uses the
+ * identical function to render matching dimension labels) — one
+ * implementation so the two can never disagree on what "rounded" means.
+ */
+export const roundUpToBoard = (n: number, boardSize: number): number => Math.ceil(n / boardSize) * boardSize;

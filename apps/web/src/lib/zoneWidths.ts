@@ -38,6 +38,23 @@ export const fmtWidth = (n: number, boardSize?: number) => {
 };
 
 /**
+ * Formats a band that straddles a centerline symmetrically (the 7°-27° Zone
+ * 3 ridge band, `2a`), where `perSide` is the exact per-side distance (`a`).
+ * The engine rounds and clamps *that* per-side distance before mirroring it
+ * across the centerline to build the piece — rounding the already-doubled
+ * total instead (i.e. `roundUpToBoard(2 * perSide, boardSize)`) can land on
+ * a different, smaller multiple than `2 * roundUpToBoard(perSide, boardSize)`
+ * and disagree with the actual geometry, so this must match the engine's
+ * per-side-then-double order, not double-then-round.
+ */
+export const fmtDoubledWidth = (perSide: number, boardSize?: number) => {
+  if (!boardSize || boardSize <= 0) return fmt(2 * perSide);
+  const rounded = 2 * roundUpToBoard(perSide, boardSize);
+  const roundedStr = Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
+  return `${roundedStr} ft (min ${fmt(2 * perSide)})`;
+};
+
+/**
  * Per-zone width figures for the "Zone areas" table, computed the same way
  * as the matching call-outs in Scene3D's RoofDimensions / SteepRoofDimensions
  * / MonoslopeRoofDimensions / SteppedRoofDimensions, so the table and the 3D
@@ -45,8 +62,12 @@ export const fmtWidth = (n: number, boardSize?: number) => {
  * or high/low) width figure are included; a zone with no entry renders as
  * "—" in the table.
  *
- * `boardSize`, when provided, additionally rounds each width up to the next
- * whole board (see fmtWidth) for material takeoff. Leg lengths are left exact.
+ * `boardSize`, when provided, additionally rounds each edge-band width up to
+ * the next whole board (see fmtWidth) for material takeoff — except Zone 1/1'
+ * (the field/interior), which is a residual (roof dimension minus the edge
+ * band(s)) rather than a board-ordered width: it's derived from the *rounded*
+ * edge band instead, so it shrinks — never rounds up — as boardSize grows.
+ * Leg lengths are left exact.
  */
 export function computeZoneWidths(
   result: ComputationResult,
@@ -91,7 +112,7 @@ export function computeZoneWidths(
     out['2'] = { width: fmtWidth(roof.rakeBand, boardSize) };
     out['3'] =
       roof.pitchBand === '7-27'
-        ? { width: `${fmtWidth(2 * roof.ridgeOrEaveBand, boardSize)} (straddles ridge)` }
+        ? { width: `${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize)} (straddles ridge)` }
         : { width: fmtWidth(roof.ridgeOrEaveBand, boardSize) };
     return out;
   }
@@ -100,9 +121,20 @@ export function computeZoneWidths(
   const dEdgeX = Math.min(roof.dEdge, roof.roofLength / 2);
   const dEdgeY = Math.min(roof.dEdge, roof.roofWidth / 2);
   const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
-  const dIntY = Math.min(roof.dInterior, roof.roofWidth / 2);
+
+  // Zone 1/1' is whatever's left after the edge band(s) — never a width in
+  // its own right. Board-rounding pushes the edge band further in (it only
+  // ever grows), so the field/interior residual can only shrink in response;
+  // it must never be rounded up on its own, or it visibly grows instead.
+  // Deriving it from the *rounded* edge distance (rather than rounding the
+  // already-exact residual) is what keeps the direction correct, and what
+  // makes this figure match the actual (also board-rounded) 3D geometry.
+  const dEdgeYForInterior = boardSize ? Math.min(roundUpToBoard(roof.dEdge, boardSize), roof.roofWidth / 2) : dEdgeY;
+  const dIntY = boardSize
+    ? Math.min(roundUpToBoard(roof.dInterior, boardSize), roof.roofWidth / 2)
+    : Math.min(roof.dInterior, roof.roofWidth / 2);
   const zone1PrimeWidth = Math.max(0, roof.roofWidth - 2 * dIntY);
-  const zone1Width = Math.max(0, roof.roofWidth - 2 * dEdgeY);
+  const zone1Width = Math.max(0, roof.roofWidth - 2 * dEdgeYForInterior);
 
   const zone1Exists = roof.pieces.some((p) => p.zoneId === '1' || p.zoneId === "1'");
   const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
@@ -113,7 +145,7 @@ export function computeZoneWidths(
   if (zone1Exists) {
     out['2'] = { width: fmtWidth(dEdgeY, boardSize) };
     out[roof.hasZone1Prime ? "1'" : '1'] = {
-      width: fmtWidth(roof.hasZone1Prime ? zone1PrimeWidth : zone1Width, boardSize),
+      width: fmt(roof.hasZone1Prime ? zone1PrimeWidth : zone1Width),
     };
   }
   return out;

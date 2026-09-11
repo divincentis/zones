@@ -1,7 +1,7 @@
 import type { ABasis, FootprintNode } from './types.js';
 import { leastHorizontalDimension, localRectToWorld, rectFrame } from './geometry.js';
 import { meanRoofHeight } from './meanRoofHeight.js';
-import { isDegenerateRect, rectArea, type ZonePiece } from './zoneTypes.js';
+import { isDegenerateRect, rectArea, roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Low-slope roof zone geometry (θ ≤ 7°), per FM Global Property Loss
@@ -69,7 +69,18 @@ function isDegenerate(b: Bounds, tol = 1e-9): boolean {
 
 export function computeLowSlopeRoofZones(
   node: FootprintNode,
-  aBasis: ABasis
+  aBasis: ABasis,
+  /**
+   * Board width (ft) to round the edge-band distances up to before laying
+   * out zone geometry, e.g. 4 or 8 ft — so the 3D pieces and their areas
+   * match what actually gets ordered/built rather than the raw h-derived
+   * minimum. Purely a geometry-construction detail: the returned `dEdge` /
+   * `dInterior` / `legWidth` stay the exact nominal (pre-rounding) values,
+   * since `wideThreshold`/`hasZone1Prime` — a real engineering question, not
+   * a takeoff one — must not shift with board size. Omit (or 0) for exact
+   * geometry.
+   */
+  boardSize?: number
 ): LowSlopeRoofZoneResult {
   if (node.roof.pitchDegrees > 7) {
     throw new Error(
@@ -98,11 +109,20 @@ export function computeLowSlopeRoofZones(
   const nominalLegWidth = 0.2 * h;
   const wideThreshold = 2.4 * h;
 
+  // Board-rounded distances drive the actual piece geometry below when
+  // boardSize is set; the exact nominal values above are what's returned in
+  // the summary (see the boardSize param doc) and what wideThreshold/
+  // hasZone1Prime are computed from further down.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const dEdgeGeom = round(dEdge);
+  const dInteriorGeom = round(dInterior);
+  const legWidthGeom = round(nominalLegWidth);
+
   // Per-axis collision clamp: opposing edge bands must not cross past the
   // building's centerline (scope §6: "bands collide — define the behavior").
-  const dX = Math.min(dEdge, roofLength / 2);
-  const dY = Math.min(dEdge, roofWidth / 2);
-  const legW = Math.min(nominalLegWidth, dX, dY);
+  const dX = Math.min(dEdgeGeom, roofLength / 2);
+  const dY = Math.min(dEdgeGeom, roofWidth / 2);
+  const legW = Math.min(legWidthGeom, dX, dY);
 
   const parapetCreditsCorners = node.roof.parapetHeight >= PARAPET_CORNER_CREDIT_THRESHOLD_FT;
   const cornerZoneId: LowSlopeRoofZoneId = parapetCreditsCorners ? '2' : '3';
@@ -180,10 +200,12 @@ export function computeLowSlopeRoofZones(
 
   if (!isDegenerate(insetD1)) {
     if (hasZone1Prime) {
-      // wideThreshold = 2 * dInterior, so lMin > wideThreshold guarantees
-      // dInterior fits unclamped on both axes — see design note below.
-      const d2X = dInterior;
-      const d2Y = dInterior;
+      // wideThreshold = 2 * dInterior, so lMin > wideThreshold guarantees the
+      // exact (unrounded) dInterior fits unclamped on both axes — but a
+      // board-rounded dInterior can be pushed past that, so clamp explicitly
+      // rather than relying on the invariant.
+      const d2X = Math.min(dInteriorGeom, roofLength / 2);
+      const d2Y = Math.min(dInteriorGeom, roofWidth / 2);
       const insetD2: Bounds = {
         xMin: d2X,
         xMax: roofLength - d2X,

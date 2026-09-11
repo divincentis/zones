@@ -8,7 +8,7 @@ import {
   type RectFrame,
 } from './geometry.js';
 import { meanRoofHeight } from './meanRoofHeight.js';
-import type { ZonePiece } from './zoneTypes.js';
+import { roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
  * Stepped (abutting / adjoining) buildings — two building sections whose
@@ -224,6 +224,7 @@ interface RegionInput {
   extraY: number[];
   parapetCreditsCorners: boolean;
   aBasis: ABasis;
+  boardSize?: number;
 }
 
 interface FreeCorner {
@@ -248,12 +249,21 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
   const legWidth = 0.2 * h;
   const wideThreshold = 2.4 * h;
 
+  // Board-rounded distances drive the actual piece geometry below when
+  // region.boardSize is set; the exact values above are what's returned in
+  // the summary (see computeLowSlopeRoofZones's boardSize param doc for why)
+  // and what wideThreshold/hasZone1Prime are computed from.
+  const round = (n: number) => (region.boardSize ? roundUpToBoard(n, region.boardSize) : n);
+  const dEdgeGeom = round(dEdge);
+  const dInteriorGeom = round(dInterior);
+  const legWidthGeom = round(legWidth);
+
   const xLo = Math.min(...rects.map((r) => r.rect.x0));
   const xHi = Math.max(...rects.map((r) => r.rect.x1));
   const yLo = Math.min(...rects.map((r) => r.rect.y0));
   const yHi = Math.max(...rects.map((r) => r.rect.y1));
 
-  const offsets = [0, legWidth, dEdge, dInterior];
+  const offsets = [0, legWidthGeom, dEdgeGeom, dInteriorGeom];
   const xs = buildAxisCoords(
     [...rects.flatMap((r) => [r.rect.x0, r.rect.x1]), ...region.extraX],
     offsets,
@@ -359,8 +369,8 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
     corners.some((c) => {
       const a = c.sx * (px - c.x);
       const b = c.sy * (py - c.y);
-      if (a <= 0 || b <= 0 || a >= dEdge || b >= dEdge) return false;
-      return a < legWidth || b < legWidth;
+      if (a <= 0 || b <= 0 || a >= dEdgeGeom || b >= dEdgeGeom) return false;
+      return a < legWidthGeom || b < legWidthGeom;
     });
 
   const labels: (SteppedRoofZoneId | null)[] = new Array(nx * ny).fill(null);
@@ -381,7 +391,7 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
           const d = linfDistanceToSeg(seg, cx, cy);
           if (d < dist) dist = d;
         }
-        zone = dist <= dEdge ? '2' : !hasZone1Prime || dist <= dInterior ? '1' : "1'";
+        zone = dist <= dEdgeGeom ? '2' : !hasZone1Prime || dist <= dInteriorGeom ? '1' : "1'";
       }
       labels[cellIndex(i, j)] = zone;
     }
@@ -600,7 +610,9 @@ function resolveAbutment(a: LocalRect, b: LocalRect): Abutment {
  */
 export function computeSteppedRoofZones(
   sections: readonly [FootprintNode, FootprintNode],
-  aBasis: ABasis
+  aBasis: ABasis,
+  /** Board width (ft) to round each region's edge-band distances up to before laying out zone geometry — see the equivalent param on computeLowSlopeRoofZones. Returned region summary fields stay exact regardless. */
+  boardSize?: number
 ): SteppedRoofZoneResult {
   for (const node of sections) {
     if (node.roofType !== 'flat') {
@@ -677,6 +689,7 @@ export function computeSteppedRoofZones(
         ...abutEnds,
         parapetCreditsCorners,
         aBasis,
+        boardSize,
       }),
       computeRegionZones(frame, {
         role: 'upper',
@@ -686,6 +699,7 @@ export function computeSteppedRoofZones(
         ...abutEnds,
         parapetCreditsCorners,
         aBasis,
+        boardSize,
       }),
     ];
   } else {
@@ -700,6 +714,7 @@ export function computeSteppedRoofZones(
         ...abutEnds,
         parapetCreditsCorners,
         aBasis,
+        boardSize,
       }),
     ];
     hBasis = 'tallerSection';

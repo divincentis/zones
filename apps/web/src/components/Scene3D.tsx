@@ -35,7 +35,7 @@ import {
 import { ZoneQuad } from './ZoneQuad';
 import { DimensionLine } from './Dimension3D';
 import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
-import { fmtWidth } from '../lib/zoneWidths';
+import { fmt, fmtDoubledWidth, fmtWidth, roundUpToBoard } from '../lib/zoneWidths';
 
 interface Props {
   result: ComputationResult;
@@ -176,17 +176,34 @@ function RoofDimensions({
   const roofMinY = Math.min(...roofYs);
   const roofMaxY = Math.max(...roofYs);
 
-  const dEdgeX = Math.min(roof.dEdge, (roofMaxX - roofMinX) / 2);
-  const dEdgeY = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
-  const legW = Math.min(roof.legWidth, dEdgeX, dEdgeY);
-  const dIntX = Math.min(roof.dInterior, (roofMaxX - roofMinX) / 2);
-  const dIntY = Math.min(roof.dInterior, (roofMaxY - roofMinY) / 2);
+  // Exact (unrounded) clamped distances — used only as the "(min ...)"
+  // figure inside fmtWidth's label text, never for a line position or a
+  // residual, so board-rounding can't leak into them the wrong way.
+  const dEdgeXExact = Math.min(roof.dEdge, (roofMaxX - roofMinX) / 2);
+  const dEdgeYExact = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
+  const legWExact = Math.min(roof.legWidth, dEdgeXExact, dEdgeYExact);
+
+  // Board-rounded (when boardSize is set) clamped distances — these drive
+  // every dimension LINE's position and the Zone 1/1' residual, so the
+  // call-outs stay aligned with the actual (also board-rounded) 3D pieces.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const dEdgeX = Math.min(round(roof.dEdge), (roofMaxX - roofMinX) / 2);
+  const dEdgeY = Math.min(round(roof.dEdge), (roofMaxY - roofMinY) / 2);
+  const legW = Math.min(round(roof.legWidth), dEdgeX, dEdgeY);
+  const dIntX = Math.min(round(roof.dInterior), (roofMaxX - roofMinX) / 2);
+  const dIntY = Math.min(round(roof.dInterior), (roofMaxY - roofMinY) / 2);
   // When Zone 1' exists, it's a rectangular field beyond both 1.2h interior
   // boundaries — a plan shape, not a band, so a foreman needs both its
   // length and width to lay it out (they aren't equal unless the roof is
   // square). When it doesn't, Zone 1 itself continues all the way in from
   // the 0.6h edge band on every side (there's no further inset), so it's
   // still effectively a band and one width call-out is enough.
+  //
+  // Zone 1/1' is a residual (roof dimension minus the edge band(s)), never a
+  // width in its own right — board-rounding only ever grows the edge band,
+  // so this can only shrink in response. It must never be rounded up on its
+  // own (that would grow it instead), so it's derived from the already-
+  // rounded edge distances above and shown as a plain exact figure.
   const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
   const zone1PrimeLength = Math.max(0, roofMaxX - roofMinX - 2 * dIntX);
   const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
@@ -238,13 +255,13 @@ function RoofDimensions({
           <DimensionLine
             from={at(nearX, nearY + (dirY * legW) / 2)}
             to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-            label={`Zone 3 leg width = 0.2h = ${fmtWidth(legW, boardSize ?? undefined)}`}
+            label={`Zone 3 leg width = 0.2h = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
             color={AMBER}
           />
           <DimensionLine
             from={at(nearX, nearY - dirY * legLenOutset)}
-            to={at(nearX + dirX * dEdgeX, nearY - dirY * legLenOutset)}
-            label={`Zone 3 leg length = 0.6h = ${dEdgeX.toFixed(2)} ft`}
+            to={at(nearX + dirX * dEdgeXExact, nearY - dirY * legLenOutset)}
+            label={`Zone 3 leg length = 0.6h = ${dEdgeXExact.toFixed(2)} ft`}
             color={AMBER}
           />
         </>
@@ -253,7 +270,7 @@ function RoofDimensions({
         <DimensionLine
           from={at(bandX, nearY)}
           to={at(bandX, nearY + dirY * dEdgeY)}
-          label={`Zone 2 width = 0.6h = ${fmtWidth(dEdgeY, boardSize ?? undefined)}`}
+          label={`Zone 2 width = 0.6h = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
           color={AMBER}
         />
       )}
@@ -263,13 +280,13 @@ function RoofDimensions({
             <DimensionLine
               from={at(interiorX, roofMinY + dIntY)}
               to={at(interiorX, roofMaxY - dIntY)}
-              label={`Zone 1' width = ${fmtWidth(zone1PrimeWidth, boardSize ?? undefined)}`}
+              label={`Zone 1' width = ${fmt(zone1PrimeWidth)}`}
               color={BLUE}
             />
             <DimensionLine
               from={at(roofMinX + dIntX, lengthRowY)}
               to={at(roofMaxX - dIntX, lengthRowY)}
-              label={`Zone 1' length = ${fmtWidth(zone1PrimeLength, boardSize ?? undefined)}`}
+              label={`Zone 1' length = ${fmt(zone1PrimeLength)}`}
               color={BLUE}
             />
           </>
@@ -277,7 +294,7 @@ function RoofDimensions({
           <DimensionLine
             from={at(interiorX, roofMinY + dEdgeY)}
             to={at(interiorX, roofMaxY - dEdgeY)}
-            label={`Zone 1 width = ${fmtWidth(zone1Width, boardSize ?? undefined)}`}
+            label={`Zone 1 width = ${fmt(zone1Width)}`}
             color={BLUE}
           />
         ))}
@@ -300,6 +317,13 @@ function SteepRoofDimensions({
   const { building, roof } = result;
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
   const { frame, ridgeAxis, perpExtent } = resolveRidgeGeometry(building);
+
+  // Board-rounded band distances drive line positions (matching the actual,
+  // also-rounded 3D pieces); fmtWidth is still given the exact roof.*Band
+  // value for its own "(min ...)" figure.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const rakeBand = round(roof.rakeBand);
+  const ridgeOrEaveBand = round(roof.ridgeOrEaveBand);
 
   // The footprint frame's u/v axes always align with world x/y for this
   // app's axis-aligned rectangles (see rectFrame), so the camera-facing
@@ -327,8 +351,8 @@ function SteepRoofDimensions({
   // points land clearly apart — with a single shared offset both dimensions'
   // midpoints sit almost on top of each other near the corner and their
   // pill labels overlap illegibly from most camera angles.
-  const gap = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.03);
-  const gap2 = Math.min(roof.rakeBand, roof.ridgeOrEaveBand, maxSpan * 0.09);
+  const gap = Math.min(rakeBand, ridgeOrEaveBand, maxSpan * 0.03);
+  const gap2 = Math.min(rakeBand, ridgeOrEaveBand, maxSpan * 0.09);
   // At 7°-27°, Zone 3 sits centered on the ridge, not at the true corner
   // (see steepRoofZones.ts) — its across-ridge width is the full 2a straddling
   // the ridge centerline, not the a-from-corner span the old single dimension
@@ -339,21 +363,21 @@ function SteepRoofDimensions({
     <group>
       <DimensionLine
         from={at(0, gap)}
-        to={at(roof.rakeBand, gap)}
+        to={at(rakeBand, gap)}
         label={`Zone 2/3 depth (from rake) = a = ${fmtWidth(roof.rakeBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       {roof.pitchBand === '7-27' ? (
         <DimensionLine
-          from={at(gap2, ridgeCenter - roof.ridgeOrEaveBand)}
-          to={at(gap2, ridgeCenter + roof.ridgeOrEaveBand)}
-          label={`Zone 3 width (straddles ridge) = 2a = ${fmtWidth(2 * roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
+          from={at(gap2, ridgeCenter - ridgeOrEaveBand)}
+          to={at(gap2, ridgeCenter + ridgeOrEaveBand)}
+          label={`Zone 3 width (straddles ridge) = 2a = ${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       ) : (
         <DimensionLine
           from={at(gap2, 0)}
-          to={at(gap2, roof.ridgeOrEaveBand)}
+          to={at(gap2, ridgeOrEaveBand)}
           label={`Zone 3 width (from eave) = a = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
@@ -380,6 +404,15 @@ function MonoslopeRoofDimensions({
   const slopeExtent = slopeAxis === 'u' ? frame.length : frame.width;
   const ridgeParallelExtent = slopeAxis === 'u' ? frame.width : frame.length;
 
+  // Board-rounded band distances drive line positions (matching the actual,
+  // also-rounded 3D pieces); fmtWidth is still given the exact roof.* value
+  // for its own "(min ...)" figure.
+  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  const highBand = round(roof.highBand);
+  const highCornerBand = round(roof.highCornerBand);
+  const lowBand = round(roof.lowBand);
+  const lowCornerBand = roof.lowCornerBand > 1e-6 ? round(roof.lowCornerBand) : 0;
+
   // The slope-axis coordinate (x, distance from the high edge) is fixed by
   // the roof's physical geometry, not the camera. Only the ridge-parallel
   // coordinate (y) can be anchored to whichever end faces the camera.
@@ -397,26 +430,26 @@ function MonoslopeRoofDimensions({
   const at = (x: number, ridgeCoord: number): Vec3 =>
     planToWorld(toWorld(x, nearRidgeCoord + dirRidge * ridgeCoord), y);
 
-  const gap = Math.min(roof.highBand, roof.highCornerBand, maxSpan * 0.03);
-  const lowGap = Math.min(roof.lowBand, roof.lowCornerBand || roof.lowBand, maxSpan * 0.06);
+  const gap = Math.min(highBand, highCornerBand, maxSpan * 0.03);
+  const lowGap = Math.min(lowBand, lowCornerBand || lowBand, maxSpan * 0.06);
   // The depth dimension's row is pushed past the corner square entirely
   // (rather than nudged by a small multiplier) so it lands in the open
   // Zone 2' field beyond, clear of the width dimension's column regardless
   // of viewing angle — this roof is often viewed nearly edge-on to its
   // high wall, which can flatten small offsets down to nothing on screen.
-  const depthRow = Math.min(roof.highCornerBand + gap, ridgeParallelExtent / 2);
+  const depthRow = Math.min(highCornerBand + gap, ridgeParallelExtent / 2);
 
   return (
     <group>
       <DimensionLine
         from={at(gap, 0)}
-        to={at(gap, roof.highCornerBand)}
+        to={at(gap, highCornerBand)}
         label={`Zone 3 width (high corner) = 4a = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       <DimensionLine
         from={at(0, depthRow)}
-        to={at(roof.highBand, depthRow)}
+        to={at(highBand, depthRow)}
         label={`Zone 2/3 depth (high side) = 2a = ${fmtWidth(roof.highBand, boardSize ?? undefined)}`}
         color={BLUE}
       />
@@ -424,14 +457,14 @@ function MonoslopeRoofDimensions({
           low-corner dimension below — a small offset from the corner isn't
           reliable here since this roof is often viewed nearly edge-on. */}
       <DimensionLine
-        from={at(slopeExtent - roof.lowBand, ridgeParallelExtent / 2)}
+        from={at(slopeExtent - lowBand, ridgeParallelExtent / 2)}
         to={at(slopeExtent, ridgeParallelExtent / 2)}
         label={`Zone 2 depth (low side) = a = ${fmtWidth(roof.lowBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
-      {roof.lowCornerBand > 1e-6 && (
+      {lowCornerBand > 1e-6 && (
         <DimensionLine
-          from={at(slopeExtent - roof.lowCornerBand, lowGap)}
+          from={at(slopeExtent - lowCornerBand, lowGap)}
           to={at(slopeExtent, lowGap)}
           label={`Zone 3 low corner (square) = 2a = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined)} each side`}
           color={BLUE}
@@ -502,29 +535,82 @@ function SteppedRoofDimensions({
         const nearY = sy > 0 ? b.maxY : b.minY;
         const dirX = sx > 0 ? -1 : 1;
         const dirY = sy > 0 ? -1 : 1;
-        const dEdgeY = Math.min(target.region.dEdge, (b.maxY - b.minY) / 2);
-        const dEdgeX = Math.min(target.region.dEdge, (b.maxX - b.minX) / 2);
-        const legW = Math.min(target.region.legWidth, dEdgeX, dEdgeY);
+        const dEdgeYExact = Math.min(target.region.dEdge, (b.maxY - b.minY) / 2);
+        const dEdgeXExact = Math.min(target.region.dEdge, (b.maxX - b.minX) / 2);
+        // Board-rounded — drives line positions to match the actual, also-
+        // rounded 3D pieces; fmtWidth below still gets the exact value.
+        const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+        const dEdgeY = Math.min(round(target.region.dEdge), (b.maxY - b.minY) / 2);
+        const dEdgeX = Math.min(round(target.region.dEdge), (b.maxX - b.minX) / 2);
+        const legWExact = Math.min(target.region.legWidth, dEdgeXExact, dEdgeYExact);
+        const legW = Math.min(round(target.region.legWidth), dEdgeX, dEdgeY);
         const y = target.elevation + Math.max(0.3, maxSpan * 0.004);
         const at = (x: number, planY: number): Vec3 => planToWorld([x, planY], y);
-        const bandX = Math.min(Math.max((b.minX + b.maxX) / 2, b.minX + dEdgeX), b.maxX - dEdgeX);
+
+        // Zone 1/1' — this region's field/interior residual, present only
+        // when the region is wide enough to clear both edge bands. A region's
+        // pieces keep the elevation of the physical rect they sit on, which
+        // is what tells lower/upper apart under the 'separate' treatment; the
+        // 'combined' treatment has only one target, so no filter is needed.
+        const regionPieces =
+          roof.treatment === 'combined' ? roof.pieces : roof.pieces.filter((p) => p.elevation === target.elevation);
+        const zone1Exists = regionPieces.some((p) => p.zoneId === '1' || p.zoneId === "1'");
+        const dIntY = Math.min(round(target.region.dInterior), (b.maxY - b.minY) / 2);
+        const dIntX = Math.min(round(target.region.dInterior), (b.maxX - b.minX) / 2);
+        const zone1PrimeWidth = Math.max(0, b.maxY - b.minY - 2 * dIntY);
+        const zone1PrimeLength = Math.max(0, b.maxX - b.minX - 2 * dIntX);
+        const zone1Width = Math.max(0, b.maxY - b.minY - 2 * dEdgeY);
+
+        // Two side-by-side columns (mirroring RoofDimensions' flat-roof
+        // treatment) so the Zone 2 band and Zone 1/1' width dimensions land
+        // inside their own zone instead of overlapping each other.
+        const gap = Math.max(2, maxSpan * 0.03);
+        const midX = (b.minX + b.maxX) / 2;
+        const clampX = (x: number) => Math.min(Math.max(x, b.minX + dEdgeX + gap * 0.3), b.maxX - dEdgeX - gap * 0.3);
+        const bandX = clampX(zone1Exists ? midX - gap / 2 : midX);
+        const interiorX = clampX(midX + gap / 2);
+        const lengthRowY = Math.min(b.maxY - dIntY, b.minY + dIntY + zone1PrimeWidth * 0.75);
 
         return (
           <group key={i}>
             <DimensionLine
               from={at(bandX, nearY)}
               to={at(bandX, nearY + dirY * dEdgeY)}
-              label={`Zone 2 width (${target.name}) = 0.6h = ${fmtWidth(dEdgeY, boardSize ?? undefined)}`}
+              label={`Zone 2 width (${target.name}) = 0.6h = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
               color={AMBER}
             />
             {legW > 1e-6 && (
               <DimensionLine
                 from={at(nearX, nearY + (dirY * legW) / 2)}
                 to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-                label={`Zone 3 leg width = 0.2h = ${fmtWidth(legW, boardSize ?? undefined)}`}
+                label={`Zone 3 leg width = 0.2h = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
                 color={BLUE}
               />
             )}
+            {zone1Exists &&
+              (target.region.hasZone1Prime ? (
+                <>
+                  <DimensionLine
+                    from={at(interiorX, b.minY + dIntY)}
+                    to={at(interiorX, b.maxY - dIntY)}
+                    label={`Zone 1' width (${target.name}) = ${fmt(zone1PrimeWidth)}`}
+                    color={GREEN}
+                  />
+                  <DimensionLine
+                    from={at(b.minX + dIntX, lengthRowY)}
+                    to={at(b.maxX - dIntX, lengthRowY)}
+                    label={`Zone 1' length (${target.name}) = ${fmt(zone1PrimeLength)}`}
+                    color={GREEN}
+                  />
+                </>
+              ) : (
+                <DimensionLine
+                  from={at(interiorX, b.minY + dEdgeY)}
+                  to={at(interiorX, b.maxY - dEdgeY)}
+                  label={`Zone 1 width (${target.name}) = ${fmt(zone1Width)}`}
+                  color={GREEN}
+                />
+              ))}
           </group>
         );
       })}
