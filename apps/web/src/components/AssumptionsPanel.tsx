@@ -9,6 +9,7 @@ import {
 import type { HoverInfo } from '../lib/hoverInfo';
 import { computeZoneWidths } from '../lib/zoneWidths';
 import { ZONE_LABELS, type AnyZoneId } from '../lib/zoneColors';
+import { ZoneLegend } from './ZoneLegend';
 
 interface Props {
   result: ComputationResult;
@@ -16,7 +17,6 @@ interface Props {
   hovered: HoverInfo | null;
   /** Board width (ft) to round zone widths up to for takeoff. null = off. */
   boardSize: number | null;
-  onBoardSizeChange: (boardSize: number | null) => void;
 }
 
 function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
@@ -35,7 +35,7 @@ function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: 
     .filter((z) => z.area > 0);
 }
 
-export function AssumptionsPanel({ result, form, hovered, boardSize, onBoardSizeChange }: Props) {
+export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
   const { roof, walls, step } = result;
   const areas = zoneAreas(result);
   const stepped = isSteppedRoofResult(roof);
@@ -197,40 +197,12 @@ export function AssumptionsPanel({ result, form, hovered, boardSize, onBoardSize
         )
       )}
 
-      <h3 style={SECTION_TITLE}>Zone areas</h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={boardSize !== null}
-            onChange={(e) => onBoardSizeChange(e.target.checked ? 4 : null)}
-          />
-          Round widths up to boards
-        </label>
-        {boardSize !== null && (
-          <>
-            <input
-              type="number"
-              min={0.5}
-              step={0.5}
-              value={boardSize}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                onBoardSizeChange(v > 0 ? v : boardSize);
-              }}
-              style={{
-                width: 44,
-                background: 'var(--surface-2)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: 3,
-                padding: '1px 4px',
-              }}
-            />
-            <span>ft</span>
-          </>
-        )}
+      <h3 style={SECTION_TITLE}>Legend</h3>
+      <div style={{ marginBottom: 14 }}>
+        <ZoneLegend hovered={hovered} />
       </div>
+
+      <h3 style={SECTION_TITLE}>Zone areas</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--gridline)' }}>

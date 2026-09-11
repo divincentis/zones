@@ -10,6 +10,9 @@ import type {
 interface Props {
   form: FormState;
   onChange: (form: FormState) => void;
+  /** Board width (ft) to round zone widths up to for takeoff. null = off. */
+  boardSize: number | null;
+  onBoardSizeChange: (boardSize: number | null) => void;
 }
 
 const FIELD_STYLE: CSSProperties = {
@@ -172,7 +175,7 @@ function PitchField({ pitchDegrees, onChange }: { pitchDegrees: number; onChange
   );
 }
 
-export function BuildingForm({ form, onChange }: Props) {
+export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     onChange({ ...form, [key]: value });
 
@@ -361,6 +364,40 @@ export function BuildingForm({ form, onChange }: Props) {
           <NumberField label="Overhang depth (ft)" value={form.overhangDepth} min={0} onChange={(v) => set('overhangDepth', v)} />
         </>
       )}
+
+      <div style={{ ...ROW_STYLE, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={boardSize !== null}
+            onChange={(e) => onBoardSizeChange(e.target.checked ? 4 : null)}
+          />
+          <span style={{ fontSize: 12 }}>Round zone widths up to boards</span>
+        </label>
+        {boardSize !== null && (
+          <>
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={boardSize}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                onBoardSizeChange(v > 0 ? v : boardSize);
+              }}
+              style={{
+                width: 48,
+                padding: '4px 6px',
+                background: 'var(--surface-2)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: 3,
+              }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ft</span>
+          </>
+        )}
+      </div>
 
       <details style={{ ...NOTE_STYLE, marginBottom: 14 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-secondary)' }}>

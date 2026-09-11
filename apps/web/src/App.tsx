@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { BuildingForm } from './components/BuildingForm';
 import { PlanView2D } from './components/PlanView2D';
 import { Scene3D } from './components/Scene3D';
-import { ZoneLegend } from './components/ZoneLegend';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
@@ -39,19 +38,12 @@ export function App() {
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 16px', minHeight: 15 }}>
           {form.projectName.trim()}
         </div>
-        <BuildingForm form={form} onChange={setForm} />
-        <h3
-          style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
-            color: 'var(--text-secondary)',
-            margin: '20px 0 8px',
-          }}
-        >
-          Legend
-        </h3>
-        <ZoneLegend hovered={hovered} />
+        <BuildingForm
+          form={form}
+          onChange={setForm}
+          boardSize={boardSize}
+          onBoardSizeChange={setBoardSize}
+        />
       </aside>
 
       <main style={{ position: 'relative', background: 'var(--surface-0)', minHeight: 0, overflow: 'hidden' }}>
@@ -126,7 +118,6 @@ export function App() {
             form={form}
             hovered={hovered}
             boardSize={boardSize}
-            onBoardSizeChange={setBoardSize}
           />
         )}
       </aside>
