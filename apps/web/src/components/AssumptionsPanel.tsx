@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import {
   isMonoslopeRoofResult,
   isSteepRoofResult,
@@ -8,8 +8,7 @@ import {
 } from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
 import { computeZoneWidths } from '../lib/zoneWidths';
-import { ZONE_LABELS, type AnyZoneId } from '../lib/zoneColors';
-import { ZoneLegend } from './ZoneLegend';
+import { ZONE_LABELS, ZONE_DESCRIPTIONS, useZoneColors, type AnyZoneId } from '../lib/zoneColors';
 
 interface Props {
   result: ComputationResult;
@@ -41,6 +40,8 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
   const stepped = isSteppedRoofResult(roof);
   const widths = computeZoneWidths(result, boardSize ?? undefined);
   const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  const colors = useZoneColors();
+  const [expandedZone, setExpandedZone] = useState<AnyZoneId | null>(null);
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -197,11 +198,6 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
         )
       )}
 
-      <h3 style={SECTION_TITLE}>Legend</h3>
-      <div style={{ marginBottom: 14 }}>
-        <ZoneLegend hovered={hovered} />
-      </div>
-
       <h3 style={SECTION_TITLE}>Zone areas</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -217,19 +213,48 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
               width?.width && `Width ${width.width}`,
               hasLegLength && width?.legLength && `Leg length ${width.legLength}`,
             ].filter(Boolean);
+            const expanded = expandedZone === zoneId;
             return (
               <Fragment key={zoneId}>
-                <tr>
-                  <td style={{ padding: '3px 0 0' }}>{ZONE_LABELS[zoneId]}</td>
+                <tr style={{ background: hovered?.zoneId === zoneId ? 'var(--surface-2)' : 'transparent' }}>
+                  <td style={{ padding: '3px 0 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedZone(expanded ? null : zoneId)}
+                      aria-expanded={expanded}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        font: 'inherit',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 2,
+                          background: colors[zoneId],
+                          flexShrink: 0,
+                        }}
+                      />
+                      {ZONE_LABELS[zoneId]}
+                    </button>
+                  </td>
                   <td style={{ padding: '3px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {area.toFixed(1)} ft²
                   </td>
                 </tr>
-                <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
+                <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--gridline)' }}>
                   <td
                     colSpan={2}
                     style={{
-                      padding: '1px 0 4px 14px',
+                      padding: '1px 0 4px 16px',
                       textAlign: 'right',
                       fontSize: 11,
                       fontVariantNumeric: 'tabular-nums',
@@ -239,6 +264,16 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
                     {detailParts.length > 0 ? detailParts.join(' · ') : ' '}
                   </td>
                 </tr>
+                {expanded && (
+                  <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
+                    <td
+                      colSpan={2}
+                      style={{ padding: '0 0 6px 16px', textAlign: 'left', fontSize: 11, color: 'var(--text-secondary)' }}
+                    >
+                      {ZONE_DESCRIPTIONS[zoneId]}
+                    </td>
+                  </tr>
+                )}
               </Fragment>
             );
           })}

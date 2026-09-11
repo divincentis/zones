@@ -56,6 +56,10 @@ const BLUE = '#1170a8';
 const RED = '#c23b3b';
 const GREEN = '#2f8f4f';
 
+// Multiplier on the camera's default distance from the building, so the
+// initial framing sits back from the model a bit rather than crowding it.
+const CAMERA_DISTANCE_SCALE = 1.2;
+
 function sumPieceArea(pieces: { zoneId: string; area: number }[], zoneId: string): number {
   return pieces.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
 }
@@ -75,7 +79,11 @@ function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
   const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
 
   useEffect(() => {
-    camera.position.set(maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32);
+    camera.position.set(
+      maxSpan * CAMERA_DISTANCE_SCALE * 1.08,
+      maxSpan * CAMERA_DISTANCE_SCALE * 0.9,
+      maxSpan * CAMERA_DISTANCE_SCALE * 1.32
+    );
     camera.near = 0.1;
     camera.far = Math.max(1000, maxSpan * 8);
     camera.updateProjectionMatrix();
@@ -960,7 +968,15 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
         canvas.addEventListener('webglcontextlost', handleContextLost);
         canvas.addEventListener('webglcontextrestored', handleContextRestored);
       }}
-      camera={{ position: [maxSpan * 1.08, maxSpan * 0.9, maxSpan * 1.32], fov: 40, far: Math.max(1000, maxSpan * 8) }}
+      camera={{
+        position: [
+          maxSpan * CAMERA_DISTANCE_SCALE * 1.08,
+          maxSpan * CAMERA_DISTANCE_SCALE * 0.9,
+          maxSpan * CAMERA_DISTANCE_SCALE * 1.32,
+        ],
+        fov: 40,
+        far: Math.max(1000, maxSpan * 8),
+      }}
     >
       <CameraRig maxSpan={maxSpan} center={center} />
       <FacingTracker center={center} onChange={setFacing} />
@@ -1072,7 +1088,11 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
 
       <OrbitControls makeDefault target={center} />
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
-        <GizmoViewport />
+        {/* Scene "up" is three.js's Y axis, but construction convention treats
+            Z as vertical, so the gizmo's up-pointing axis is relabeled Z (and
+            the horizontal one Y) purely for display — no scene geometry uses
+            these axes, so nothing else needs to change. */}
+        <GizmoViewport labels={['X', 'Z', 'Y']} />
       </GizmoHelper>
     </Canvas>
   );
