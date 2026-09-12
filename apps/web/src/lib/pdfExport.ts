@@ -7,7 +7,7 @@ import {
   type FormState,
 } from './buildModel';
 import { readZoneHexes, ZONE_LABELS, type AnyZoneId } from './zoneColors';
-import { computeZoneWidths } from './zoneWidths';
+import { computeZoneDimensions } from './zoneDimensions';
 
 const PRELIMINARY_NOTICE =
   'Preliminary — for coordination and takeoff. Not for construction. Not sealed. ' +
@@ -199,8 +199,7 @@ export function exportZonePdf(
   y += 16;
   doc.setFontSize(9);
   const areas = zoneAreas(result);
-  const widths = computeZoneWidths(result, boardSize);
-  const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  const dimensions = computeZoneDimensions(result, boardSize);
   const zoneHexes = readZoneHexes();
   const swatchSize = 8;
   const labelX = margin + swatchSize + 6;
@@ -224,19 +223,17 @@ export function exportZonePdf(
     doc.text(`${area.toFixed(1)} ft²`, valueX, y);
     y += 12;
 
-    const width = widths[zoneId];
-    const detailParts = [
-      width?.width && `Width ${width.width}`,
-      hasLegLength && width?.legLength && `Leg length ${width.legLength}`,
-    ].filter(Boolean);
-    if (detailParts.length > 0) {
+    // One line per figure, mirroring the panel's sub-rows: name and
+    // multiplier on the left, the figure itself in the value column.
+    for (const row of dimensions[zoneId] ?? []) {
       if (y > pageHeight - margin) {
         doc.addPage();
         y = margin;
       }
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text(detailParts.join('  ·  '), margin + 14, y);
+      doc.text(row.formula ? `${row.label} — ${row.formula}` : row.label, margin + 14, y);
+      doc.text(row.value, valueX, y);
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       y += 12;

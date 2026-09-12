@@ -8,6 +8,14 @@ interface DimensionLineProps {
   to: Vec3;
   label?: string;
   color?: string;
+  /** Label collision rank — lower wins its anchor and higher yields (see LabelCollisionProvider). */
+  priority?: number;
+  /**
+   * Move this label away from the camera, not down-screen, when it has to
+   * yield — for a call-out drawn inside the zone it measures, so it stays
+   * over that zone instead of drifting out across the nearer ones.
+   */
+  retreat?: boolean;
 }
 
 /**
@@ -19,12 +27,17 @@ interface DimensionLineProps {
  * flush against, rather than z-fighting or getting partially buried in them.
  * The label registers with the nearest LabelCollisionProvider so it nudges
  * out of the way of any other dimension label it would otherwise overlap on
- * screen.
+ * screen — or, if it outranks that one on `priority`, stays put and makes it
+ * do the moving. `retreat` picks which way it goes when it is the one that
+ * moves.
  */
-export function DimensionLine({ from, to, label, color = '#333333' }: DimensionLineProps) {
-  const labelRef = useCollidableLabelRef();
+export function DimensionLine({ from, to, label, color = '#333333', priority = 0, retreat }: DimensionLineProps) {
   const start = new THREE.Vector3(...from);
   const end = new THREE.Vector3(...to);
+  // The label rides at the midpoint, which is also the anchor the collision
+  // pass measures "away from the camera" from.
+  const mid = start.clone().add(end).multiplyScalar(0.5);
+  const labelRef = useCollidableLabelRef({ priority, retreat, anchor: mid.clone() });
   const dir = end.clone().sub(start);
   const length = dir.length();
   if (length < 1e-6) return null;
@@ -39,7 +52,6 @@ export function DimensionLine({ from, to, label, color = '#333333' }: DimensionL
   const tickLen = Math.min(length * 0.25, 1.5);
   const tick = perp.multiplyScalar(tickLen / 2);
 
-  const mid = start.clone().add(end).multiplyScalar(0.5);
   const lineProps = {
     color,
     lineWidth: 2.25,

@@ -35,7 +35,7 @@ import {
 import { ZoneQuad } from './ZoneQuad';
 import { DimensionLine } from './Dimension3D';
 import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
-import { fmt, fmtDoubledWidth, fmtWidth, roundUpToBoard } from '../lib/zoneWidths';
+import { fmt, fmtDoubledWidth, fmtWidth, roundUpToBoard } from '../lib/zoneDimensions';
 
 interface Props {
   result: ComputationResult;
@@ -55,6 +55,26 @@ const AMBER = '#b8720d';
 const BLUE = '#1170a8';
 const RED = '#c23b3b';
 const GREEN = '#2f8f4f';
+
+/**
+ * Which call-out keeps its anchor when two labels overlap on screen (lower
+ * wins; LabelCollisionProvider nudges the loser clear). Ordered by how much
+ * the figure drives the work: Zone 3 and Zone 2 are the bands that actually
+ * get laid out from the edge, Zone 1 is the field between them, and Zone 1'
+ * — a residual of a residual, read off last — yields to all of them.
+ *
+ * The overall building dimensions rank last: they're drawn outside the
+ * footprint already, so nudging them further out costs nothing, whereas
+ * letting them hold their anchor drags the whole zone stack off the roof
+ * and out over the ground plane.
+ */
+const DIM_PRIORITY = {
+  zone3: 0,
+  zone2: 1,
+  zone1: 2,
+  zone1Prime: 3,
+  building: 9,
+} as const;
 
 // Multiplier on the camera's default distance from the building, so the
 // initial framing sits back from the model a bit rather than crowding it.
@@ -196,8 +216,8 @@ function RoofDimensions({
   // boundaries — a plan shape, not a band, so a foreman needs both its
   // length and width to lay it out (they aren't equal unless the roof is
   // square). When it doesn't, Zone 1 itself continues all the way in from
-  // the 0.6h edge band on every side (there's no further inset), so it's
-  // still effectively a band and one width call-out is enough.
+  // the 0.6h edge band on every side (there's no further inset), so its one
+  // width call-out covers the whole inner residual.
   //
   // Zone 1/1' is a residual (roof dimension minus the edge band(s)), never a
   // width in its own right — board-rounding only ever grows the edge band,
@@ -206,7 +226,11 @@ function RoofDimensions({
   // rounded edge distances above and shown as a plain exact figure.
   const zone1PrimeWidth = Math.max(0, roofMaxY - roofMinY - 2 * dIntY);
   const zone1PrimeLength = Math.max(0, roofMaxX - roofMinX - 2 * dIntX);
+  // Zone 1 with no Zone 1' beyond it is the whole inner residual; with one,
+  // it's the ring band between the 0.6h and 1.2h lines, which is the figure
+  // a foreman lays out from — so Zone 1 gets its own call-out either way.
   const zone1Width = Math.max(0, roofMaxY - roofMinY - 2 * dEdgeY);
+  const zone1BandWidth = Math.max(0, dIntY - dEdgeY);
   // On small buildings the inner bands can collapse entirely — Zone 1
   // vanishes when the 0.6h edge bands meet at the center, and Zone 2 can
   // vanish in turn when the corner legs consume the whole perimeter. Gate
@@ -238,11 +262,16 @@ function RoofDimensions({
   const midX = (roofMinX + roofMaxX) / 2;
   const bandX = clampX(midX - gap / 2);
   const interiorX = clampX(midX + gap / 2);
-  // Zone 1' length's row is offset away from dead-center so its label
-  // doesn't land on top of the width dimension's label — both would
-  // otherwise sit at almost the same point, since the width line's own
-  // midpoint (at interiorX) is only "gap" away from true center.
-  const lengthRowY = Math.min(roofMaxY - dIntY, roofMinY + dIntY + zone1PrimeWidth * 0.75);
+  // Zone 1' length's row is offset away from dead-center so its label doesn't
+  // land on top of the width dimension's label — both would otherwise sit at
+  // almost the same point, since the width line's own midpoint (at
+  // interiorX) is only "gap" away from true center. The offset goes to the
+  // FAR half of Zone 1', away from the camera: offsetting toward the near
+  // edge walks the label out over Zones 2 and 3, where it reads as theirs.
+  const zone1PrimeMinY = roofMinY + dIntY;
+  const zone1PrimeMaxY = roofMaxY - dIntY;
+  const lengthRowY =
+    sy > 0 ? zone1PrimeMinY + zone1PrimeWidth * 0.25 : zone1PrimeMaxY - zone1PrimeWidth * 0.25;
   // Leg length is drawn just outside the roof edge (rather than inset on the
   // roof surface, like leg width) so it reads as an edge-run dimension —
   // clear of the leg-width tick and of the roof surface itself.
@@ -255,14 +284,18 @@ function RoofDimensions({
           <DimensionLine
             from={at(nearX, nearY + (dirY * legW) / 2)}
             to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-            label={`Zone 3 leg width = 0.2h = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
+            label={`Zone 3 leg W = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
             color={AMBER}
+            priority={DIM_PRIORITY.zone3}
+            retreat
           />
           <DimensionLine
             from={at(nearX, nearY - dirY * legLenOutset)}
-            to={at(nearX + dirX * dEdgeXExact, nearY - dirY * legLenOutset)}
-            label={`Zone 3 leg length = 0.6h = ${dEdgeXExact.toFixed(2)} ft`}
+            to={at(nearX + dirX * dEdgeX, nearY - dirY * legLenOutset)}
+            label={`Zone 3 leg L = ${fmtWidth(dEdgeXExact, boardSize ?? undefined)}`}
             color={AMBER}
+            priority={DIM_PRIORITY.zone3}
+            retreat
           />
         </>
       )}
@@ -270,32 +303,51 @@ function RoofDimensions({
         <DimensionLine
           from={at(bandX, nearY)}
           to={at(bandX, nearY + dirY * dEdgeY)}
-          label={`Zone 2 width = 0.6h = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
+          label={`Zone 2 = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
           color={AMBER}
+          priority={DIM_PRIORITY.zone2}
+          retreat
         />
       )}
       {zone1Exists &&
         (roof.hasZone1Prime ? (
           <>
+            {/* Zone 1 is the ring between the two inset lines here, so its
+                dimension continues straight on from the Zone 2 band in the
+                same column — each band drawn inside the zone it measures. */}
             <DimensionLine
-              from={at(interiorX, roofMinY + dIntY)}
-              to={at(interiorX, roofMaxY - dIntY)}
-              label={`Zone 1' width = ${fmt(zone1PrimeWidth)}`}
+              from={at(bandX, nearY + dirY * dEdgeY)}
+              to={at(bandX, nearY + dirY * dIntY)}
+              label={`Zone 1 = ${fmt(zone1BandWidth)}`}
               color={BLUE}
+              priority={DIM_PRIORITY.zone1}
+              retreat
+            />
+            <DimensionLine
+              from={at(interiorX, zone1PrimeMinY)}
+              to={at(interiorX, zone1PrimeMaxY)}
+              label={`Zone 1' W = ${fmt(zone1PrimeWidth)}`}
+              color={BLUE}
+              priority={DIM_PRIORITY.zone1Prime}
+              retreat
             />
             <DimensionLine
               from={at(roofMinX + dIntX, lengthRowY)}
               to={at(roofMaxX - dIntX, lengthRowY)}
-              label={`Zone 1' length = ${fmt(zone1PrimeLength)}`}
+              label={`Zone 1' L = ${fmt(zone1PrimeLength)}`}
               color={BLUE}
+              priority={DIM_PRIORITY.zone1Prime}
+              retreat
             />
           </>
         ) : (
           <DimensionLine
             from={at(interiorX, roofMinY + dEdgeY)}
             to={at(interiorX, roofMaxY - dEdgeY)}
-            label={`Zone 1 width = ${fmt(zone1Width)}`}
+            label={`Zone 1 = ${fmt(zone1Width)}`}
             color={BLUE}
+            priority={DIM_PRIORITY.zone1}
+            retreat
           />
         ))}
     </group>
@@ -364,21 +416,21 @@ function SteepRoofDimensions({
       <DimensionLine
         from={at(0, gap)}
         to={at(rakeBand, gap)}
-        label={`Zone 2/3 depth (from rake) = a = ${fmtWidth(roof.rakeBand, boardSize ?? undefined)}`}
+        label={`Zone 2/3 (rake) = ${fmtWidth(roof.rakeBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       {roof.pitchBand === '7-27' ? (
         <DimensionLine
           from={at(gap2, ridgeCenter - ridgeOrEaveBand)}
           to={at(gap2, ridgeCenter + ridgeOrEaveBand)}
-          label={`Zone 3 width (straddles ridge) = 2a = ${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
+          label={`Zone 3 (ridge) = ${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       ) : (
         <DimensionLine
           from={at(gap2, 0)}
           to={at(gap2, ridgeOrEaveBand)}
-          label={`Zone 3 width (from eave) = a = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
+          label={`Zone 3 (eave) = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       )}
@@ -444,13 +496,13 @@ function MonoslopeRoofDimensions({
       <DimensionLine
         from={at(gap, 0)}
         to={at(gap, highCornerBand)}
-        label={`Zone 3 width (high corner) = 4a = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined)}`}
+        label={`Zone 3 (high corner) = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       <DimensionLine
         from={at(0, depthRow)}
         to={at(highBand, depthRow)}
-        label={`Zone 2/3 depth (high side) = 2a = ${fmtWidth(roof.highBand, boardSize ?? undefined)}`}
+        label={`Zone 2/3 (high side) = ${fmtWidth(roof.highBand, boardSize ?? undefined)}`}
         color={BLUE}
       />
       {/* Drawn at mid-edge (not near the corner) so it can't overlap the
@@ -459,14 +511,14 @@ function MonoslopeRoofDimensions({
       <DimensionLine
         from={at(slopeExtent - lowBand, ridgeParallelExtent / 2)}
         to={at(slopeExtent, ridgeParallelExtent / 2)}
-        label={`Zone 2 depth (low side) = a = ${fmtWidth(roof.lowBand, boardSize ?? undefined)}`}
+        label={`Zone 2 (low side) = ${fmtWidth(roof.lowBand, boardSize ?? undefined)}`}
         color={AMBER}
       />
       {lowCornerBand > 1e-6 && (
         <DimensionLine
           from={at(slopeExtent - lowCornerBand, lowGap)}
           to={at(slopeExtent, lowGap)}
-          label={`Zone 3 low corner (square) = 2a = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined)} each side`}
+          label={`Zone 3 (low corner, sq.) = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined)}`}
           color={BLUE}
         />
       )}
@@ -511,15 +563,25 @@ function SteppedRoofDimensions({
   const targets =
     roof.treatment === 'separate'
       ? [
-          { region: roof.regions.find((r) => r.role === 'lower')!, vertices: building.vertices, elevation: roof.lower.elevation, name: 'lower roof' },
-          { region: roof.regions.find((r) => r.role === 'upper')!, vertices: step.upper.vertices, elevation: roof.upper.elevation, name: 'upper roof' },
+          {
+            region: roof.regions.find((r) => r.role === 'lower')!,
+            vertices: building.vertices,
+            elevation: roof.lower.elevation,
+            role: 'lower',
+          },
+          {
+            region: roof.regions.find((r) => r.role === 'upper')!,
+            vertices: step.upper.vertices,
+            elevation: roof.upper.elevation,
+            role: 'upper',
+          },
         ]
       : [
           {
             region: roof.regions[0]!,
             vertices: [...building.vertices, ...step.upper.vertices],
             elevation: roof.upper.elevation,
-            name: 'combined roof',
+            role: 'combined',
           },
         ];
 
@@ -559,7 +621,11 @@ function SteppedRoofDimensions({
         const dIntX = Math.min(round(target.region.dInterior), (b.maxX - b.minX) / 2);
         const zone1PrimeWidth = Math.max(0, b.maxY - b.minY - 2 * dIntY);
         const zone1PrimeLength = Math.max(0, b.maxX - b.minX - 2 * dIntX);
+        // As in RoofDimensions: with a Zone 1' beyond it, Zone 1 is the ring
+        // band between the 0.6h and 1.2h lines; without one it's the whole
+        // inner residual. Either way it gets its own call-out.
         const zone1Width = Math.max(0, b.maxY - b.minY - 2 * dEdgeY);
+        const zone1BandWidth = Math.max(0, dIntY - dEdgeY);
 
         // Two side-by-side columns (mirroring RoofDimensions' flat-roof
         // treatment) so the Zone 2 band and Zone 1/1' width dimensions land
@@ -569,46 +635,69 @@ function SteppedRoofDimensions({
         const clampX = (x: number) => Math.min(Math.max(x, b.minX + dEdgeX + gap * 0.3), b.maxX - dEdgeX - gap * 0.3);
         const bandX = clampX(zone1Exists ? midX - gap / 2 : midX);
         const interiorX = clampX(midX + gap / 2);
-        const lengthRowY = Math.min(b.maxY - dIntY, b.minY + dIntY + zone1PrimeWidth * 0.75);
+        // Offset to the far half of Zone 1', away from the camera — see the
+        // equivalent row in RoofDimensions.
+        const zone1PrimeMinY = b.minY + dIntY;
+        const zone1PrimeMaxY = b.maxY - dIntY;
+        const lengthRowY =
+          sy > 0 ? zone1PrimeMinY + zone1PrimeWidth * 0.25 : zone1PrimeMaxY - zone1PrimeWidth * 0.25;
 
         return (
           <group key={i}>
             <DimensionLine
               from={at(bandX, nearY)}
               to={at(bandX, nearY + dirY * dEdgeY)}
-              label={`Zone 2 width (${target.name}) = 0.6h = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
+              label={`Zone 2 (${target.role}) = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
               color={AMBER}
+              priority={DIM_PRIORITY.zone2}
+              retreat
             />
             {legW > 1e-6 && (
               <DimensionLine
                 from={at(nearX, nearY + (dirY * legW) / 2)}
                 to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-                label={`Zone 3 leg width = 0.2h = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
+                label={`Zone 3 leg W (${target.role}) = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
                 color={BLUE}
+                priority={DIM_PRIORITY.zone3}
+                retreat
               />
             )}
             {zone1Exists &&
               (target.region.hasZone1Prime ? (
                 <>
                   <DimensionLine
-                    from={at(interiorX, b.minY + dIntY)}
-                    to={at(interiorX, b.maxY - dIntY)}
-                    label={`Zone 1' width (${target.name}) = ${fmt(zone1PrimeWidth)}`}
+                    from={at(bandX, nearY + dirY * dEdgeY)}
+                    to={at(bandX, nearY + dirY * dIntY)}
+                    label={`Zone 1 (${target.role}) = ${fmt(zone1BandWidth)}`}
                     color={GREEN}
+                    priority={DIM_PRIORITY.zone1}
+                    retreat
+                  />
+                  <DimensionLine
+                    from={at(interiorX, zone1PrimeMinY)}
+                    to={at(interiorX, zone1PrimeMaxY)}
+                    label={`Zone 1' W (${target.role}) = ${fmt(zone1PrimeWidth)}`}
+                    color={GREEN}
+                    priority={DIM_PRIORITY.zone1Prime}
+                    retreat
                   />
                   <DimensionLine
                     from={at(b.minX + dIntX, lengthRowY)}
                     to={at(b.maxX - dIntX, lengthRowY)}
-                    label={`Zone 1' length (${target.name}) = ${fmt(zone1PrimeLength)}`}
+                    label={`Zone 1' L (${target.role}) = ${fmt(zone1PrimeLength)}`}
                     color={GREEN}
+                    priority={DIM_PRIORITY.zone1Prime}
+                    retreat
                   />
                 </>
               ) : (
                 <DimensionLine
                   from={at(interiorX, b.minY + dEdgeY)}
                   to={at(interiorX, b.maxY - dEdgeY)}
-                  label={`Zone 1 width (${target.name}) = ${fmt(zone1Width)}`}
+                  label={`Zone 1 (${target.role}) = ${fmt(zone1Width)}`}
                   color={GREEN}
+                  priority={DIM_PRIORITY.zone1}
+                  retreat
                 />
               ))}
           </group>
@@ -901,7 +990,7 @@ function WallCornerDimensions({
 
 /** The "a = X ft" pill for one wall corner — split out from WallCornerDimensions so it can call the label-collision hook (which, per the rules of hooks, can't be called directly inside that component's `.map()` callback). */
 function CornerLabel({ position, color, text }: { position: Vec3; color: string; text: string }) {
-  const labelRef = useCollidableLabelRef();
+  const labelRef = useCollidableLabelRef({ priority: DIM_PRIORITY.building });
   return (
     <Html position={position} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
       <div
@@ -971,18 +1060,21 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
         from={at([minX, lineY])}
         to={at([maxX, lineY])}
         label={`${step ? 'L overall' : 'L'} = ${length.toFixed(1)} ft`}
+        priority={DIM_PRIORITY.building}
         color={GREEN}
       />
       <DimensionLine
         from={at([lineX, minY])}
         to={at([lineX, maxY])}
         label={`${step ? 'B overall' : 'B'} = ${width.toFixed(1)} ft`}
+        priority={DIM_PRIORITY.building}
         color={GREEN}
       />
       <DimensionLine
         from={at([cornerX, cornerY], 0)}
         to={at([cornerX, cornerY], building.eaveHeight)}
         label={`${step ? 'Height (lower)' : 'Height'} = ${building.eaveHeight.toFixed(1)} ft`}
+        priority={DIM_PRIORITY.building}
         color={GREEN}
       />
       {step && (
@@ -990,6 +1082,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
           from={at([cornerX - outset, cornerY], 0)}
           to={at([cornerX - outset, cornerY], step.upper.eaveHeight)}
           label={`Height (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
+          priority={DIM_PRIORITY.building}
           color={GREEN}
         />
       )}
@@ -1121,35 +1214,39 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
           lower section's buried wall and raised the upper section's shared
           wall to the lower roof line (steppedWallZones.ts), so this renders
           exactly the exposed surface. */}
-      {(step ? [{ node: building, walls }, { node: step.upper, walls: step.upperWalls }] : [{ node: building, walls }]).map(
-        (section, s) =>
-          section.walls.pieces.map((piece, i) => {
-            const zoneId = piece.zoneId as AnyZoneId;
-            const start = section.node.vertices[piece.edgeIndex]!;
-            const end = section.node.vertices[(piece.edgeIndex + 1) % section.node.vertices.length]!;
-            const corners = wallPieceCorners(piece, start, end) as Quad;
-            const isHovered = hovered?.source === 'wall' && hovered.zoneId === zoneId;
-            return (
-              <ZoneQuad
-                key={`wall-${s}-${i}`}
-                corners={corners}
-                color={colors[zoneId] ?? '#999'}
-                hovered={isHovered}
-                onHoverStart={() =>
-                  onHover(
-                    describeWallHover(
-                      zoneId,
-                      sumPieceArea(walls.pieces, zoneId) +
-                        (step ? sumPieceArea(step.upperWalls.pieces, zoneId) : 0),
-                      section.walls,
-                      step ? (s === 0 ? 'lower section' : 'upper section') : undefined
-                    )
+      {(step
+        ? [
+            { node: building, walls },
+            { node: step.upper, walls: step.upperWalls },
+          ]
+        : [{ node: building, walls }]
+      ).map((section, s) =>
+        section.walls.pieces.map((piece, i) => {
+          const zoneId = piece.zoneId as AnyZoneId;
+          const start = section.node.vertices[piece.edgeIndex]!;
+          const end = section.node.vertices[(piece.edgeIndex + 1) % section.node.vertices.length]!;
+          const corners = wallPieceCorners(piece, start, end) as Quad;
+          const isHovered = hovered?.source === 'wall' && hovered.zoneId === zoneId;
+          return (
+            <ZoneQuad
+              key={`wall-${s}-${i}`}
+              corners={corners}
+              color={colors[zoneId] ?? '#999'}
+              hovered={isHovered}
+              onHoverStart={() =>
+                onHover(
+                  describeWallHover(
+                    zoneId,
+                    sumPieceArea(walls.pieces, zoneId) + (step ? sumPieceArea(step.upperWalls.pieces, zoneId) : 0),
+                    section.walls,
+                    step ? (s === 0 ? 'lower section' : 'upper section') : undefined
                   )
-                }
-                onHoverEnd={() => onHover(null)}
-              />
-            );
-          })
+                )
+              }
+              onHoverEnd={() => onHover(null)}
+            />
+          );
+        })
       )}
 
       <GableEndInfill building={building} />

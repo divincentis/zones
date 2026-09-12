@@ -7,7 +7,7 @@ import {
   type FormState,
 } from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
-import { computeZoneWidths } from '../lib/zoneWidths';
+import { computeZoneDimensions } from '../lib/zoneDimensions';
 import { ZONE_LABELS, ZONE_DESCRIPTIONS, useZoneColors, type AnyZoneId } from '../lib/zoneColors';
 
 interface Props {
@@ -38,8 +38,7 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
   const { roof, walls, step } = result;
   const areas = zoneAreas(result);
   const stepped = isSteppedRoofResult(roof);
-  const widths = computeZoneWidths(result, boardSize ?? undefined);
-  const hasLegLength = areas.some(({ zoneId }) => widths[zoneId]?.legLength !== undefined);
+  const dimensions = computeZoneDimensions(result, boardSize ?? undefined);
   const colors = useZoneColors();
   const [expandedZone, setExpandedZone] = useState<AnyZoneId | null>(null);
 
@@ -208,11 +207,7 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
         </thead>
         <tbody>
           {areas.map(({ zoneId, area }) => {
-            const width = widths[zoneId];
-            const detailParts = [
-              width?.width && `Width ${width.width}`,
-              hasLegLength && width?.legLength && `Leg length ${width.legLength}`,
-            ].filter(Boolean);
+            const rows = dimensions[zoneId] ?? [];
             const expanded = expandedZone === zoneId;
             return (
               <Fragment key={zoneId}>
@@ -250,20 +245,35 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
                     {area.toFixed(1)} ft²
                   </td>
                 </tr>
-                <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--gridline)' }}>
-                  <td
-                    colSpan={2}
+                {/* One sub-row per figure — the multipliers the 3D call-outs
+                    drop for space live here, in their own column. */}
+                {rows.map((row, i) => (
+                  <tr
+                    key={row.label}
                     style={{
-                      padding: '1px 0 4px 16px',
-                      textAlign: 'right',
-                      fontSize: 11,
-                      fontVariantNumeric: 'tabular-nums',
-                      color: 'var(--text-muted)',
+                      borderBottom:
+                        i === rows.length - 1 && !expanded ? '1px solid var(--gridline)' : 'none',
                     }}
                   >
-                    {detailParts.length > 0 ? detailParts.join(' · ') : ' '}
-                  </td>
-                </tr>
+                    <td style={{ ...DETAIL_CELL, paddingLeft: 21 }}>
+                      {row.label}
+                      {row.formula && (
+                        // Kept whole, dash included, so a narrow panel wraps
+                        // it onto its own line instead of leaving the dash
+                        // dangling at the end of the label's line.
+                        <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}> — {row.formula}</span>
+                      )}
+                    </td>
+                    <td style={{ ...DETAIL_CELL, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {row.value}
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--gridline)' }}>
+                    <td colSpan={2} style={{ ...DETAIL_CELL, height: 4 }} />
+                  </tr>
+                )}
                 {expanded && (
                   <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
                     <td
@@ -291,6 +301,13 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
     </div>
   );
 }
+
+/** Sub-row cell under a zone's area row: the figure's name/multiplier and its value. */
+const DETAIL_CELL = {
+  padding: '1px 0 3px',
+  fontSize: 11,
+  color: 'var(--text-secondary)',
+};
 
 const SECTION_TITLE = {
   fontSize: 11,
