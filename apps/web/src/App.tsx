@@ -7,6 +7,7 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
 import { exportZonePdf } from './lib/pdfExport';
+import { APP_VERSION } from './version';
 
 type ViewMode = '3d' | '2d';
 
@@ -35,6 +36,9 @@ export function App() {
         }}
       >
         <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>Wind Zone Visualizer</h1>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 4px', opacity: 0.7 }}>
+          v{APP_VERSION}
+        </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 16px', minHeight: 15 }}>
           {form.projectName.trim()}
         </div>
