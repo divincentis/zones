@@ -21,9 +21,10 @@ subfolder.
 - **Vite is configured for the `/zones/` subpath.** `apps/web/vite.config.ts`
   sets `base: command === 'build' ? '/zones/' : '/'` — already done, don't
   touch it unless the deploy path changes.
-- **Vite build filenames are content-hashed** (`index-a1b2c3.js` etc), so
-  re-uploading does not overwrite old files — stale files must be manually
-  deleted from GitHub first or they'll accumulate.
+- **Vite build filenames are fixed** (`index.js`, `index.css`, etc, no
+  content hash) — set via `build.rollupOptions.output` in
+  `apps/web/vite.config.ts`. Re-uploading overwrites files of the same name
+  in place, so there's no accumulation of stale hashed files to clean up.
 - **`zones/index.html`** is what GitHub Pages serves by default at
   `zbcad.com/zones/`.
 
@@ -43,15 +44,16 @@ subfolder.
    rm -rf zones && mv dist zones
    ```
 
-3. On github.com, open the `zbCAD` repo, go into the existing `zones/`
-   folder (if present), select all files, and delete them (commit the
-   deletion). This clears out old hashed filenames before the new upload.
-
-4. From the `zbCAD` repo root, **Add file → Upload files**, drag the local
+3. From the `zbCAD` repo root, **Add file → Upload files**, drag the local
    `zones` folder onto the drop area. GitHub preserves folder structure, so
-   it lands at `zbCAD/zones/...`. Commit directly to `master`.
+   it lands at `zbCAD/zones/...`, overwriting same-named files in place.
+   Commit directly to `master`. (No need to delete the old `zones/` folder
+   first anymore — filenames are fixed, not hashed. The one exception: if a
+   build actually drops a previously-generated file, e.g. an old chunk that
+   no longer exists, that stale file won't get cleaned up by the upload and
+   would need deleting manually.)
 
-5. GitHub Pages rebuilds automatically — live at `https://zbcad.com/zones/`
+4. GitHub Pages rebuilds automatically — live at `https://zbcad.com/zones/`
    usually within a minute.
 
 ## Not currently done, but could be later

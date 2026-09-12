@@ -16,4 +16,16 @@ export default defineConfig(({ command }) => ({
       '@zones/engine': path.resolve(import.meta.dirname, '../../packages/engine/src/index.ts'),
     },
   },
+  build: {
+    // Fixed (non-hashed) output filenames: the deploy process deletes and
+    // re-uploads the whole zones/ folder each time, so hash-busting just
+    // means manually clearing old hashed files first. See docs/deploying.md.
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name].[ext]',
+      },
+    },
+  },
 }));
