@@ -1,10 +1,10 @@
-import type { SteppedRegionSummary } from '@zones/engine';
 import {
   isMonoslopeRoofResult,
   isSteepRoofResult,
   isSteppedRoofResult,
   type ComputationResult,
 } from './buildModel';
+import { steppedSections, type SteppedSection } from './steppedSections';
 import type { AnyZoneId } from './zoneColors';
 
 /**
@@ -81,39 +81,84 @@ export const fmtDoubledWidth = (perSide: number, boardSize?: number) => {
  * leg runs from the corner in to that line), so it board-rounds right along
  * with it — the leg is cut from the same boards.
  */
-export function computeZoneDimensions(
+/** One zone's line in a table: its total area, and the figures that describe it. */
+export interface ZoneTableEntry {
+  zoneId: AnyZoneId;
+  area: number;
+  rows: ZoneDimension[];
+}
+
+/**
+ * A table of zones covering one roof — the whole building, or one level of a
+ * stepped one.
+ */
+export interface ZoneTable {
+  /** Heading, e.g. "Zone areas" or "Lower roof". */
+  title: string;
+  /** Elevation of this roof plane, ft above grade. Only set when there's more than one table. */
+  elevation?: number;
+  zones: ZoneTableEntry[];
+}
+
+const ZONE_ORDER: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
+
+/**
+ * The "Zone areas" content: one table for an ordinary building, and one per
+ * level for a stepped one. Splitting by level is what lets every figure drop
+ * its "(lower)"/"(upper)" qualifier — the heading carries it — and it matches
+ * how the work is actually ordered, per roof rather than per building.
+ */
+export function computeZoneTables(result: ComputationResult, boardSize?: number): ZoneTable[] {
+  const sections = steppedSections(result);
+  if (sections.length === 0) {
+    const dims = roofZoneDimensions(result, boardSize);
+    addWallDimensions(dims, result.walls);
+    const area = (zoneId: AnyZoneId) =>
+      sumArea(isWallZone(zoneId) ? result.walls.pieces : result.roof.pieces, zoneId);
+    return [{ title: 'Zone areas', zones: zoneEntries(dims, area) }];
+  }
+
+  const upperWalls = result.step!.upperWalls;
+  return sections.map((section) => {
+    const dims = steppedZoneDimensions(section, boardSize);
+    const walls = section.role === 'upper' ? upperWalls : result.walls;
+    addWallDimensions(dims, walls);
+    const area = (zoneId: AnyZoneId) =>
+      isWallZone(zoneId) ? sumArea(walls.pieces, zoneId) : (section.extents[zoneId]?.area ?? 0);
+    return {
+      title: section.role === 'upper' ? 'Upper roof' : 'Lower roof',
+      elevation: section.elevation,
+      zones: zoneEntries(dims, area),
+    };
+  });
+}
+
+const isWallZone = (zoneId: AnyZoneId) => zoneId === '4' || zoneId === '5';
+
+const sumArea = (pieces: Array<{ zoneId: string; area: number }>, zoneId: AnyZoneId) =>
+  pieces.filter((p) => p.zoneId === zoneId).reduce((sum, p) => sum + p.area, 0);
+
+/** Zones with any area, in reading order, each with whatever figures describe it. */
+function zoneEntries(
+  dims: Partial<Record<AnyZoneId, ZoneDimension[]>>,
+  area: (zoneId: AnyZoneId) => number
+): ZoneTableEntry[] {
+  return ZONE_ORDER.map((zoneId) => ({ zoneId, area: area(zoneId), rows: dims[zoneId] ?? [] })).filter(
+    (entry) => entry.area > 0
+  );
+}
+
+/** Roof zones of a whole (non-stepped) building — computeZoneTables adds the wall zones. */
+function roofZoneDimensions(
   result: ComputationResult,
   boardSize?: number
 ): Partial<Record<AnyZoneId, ZoneDimension[]>> {
   const { roof } = result;
   const out: Partial<Record<AnyZoneId, ZoneDimension[]>> = {};
 
-  if (isSteppedRoofResult(roof)) {
-    const zone3Exists = roof.pieces.some((p) => p.zoneId === '3');
-    const regions = roof.regions;
-    // Under the 'separate' treatment the two roof levels have different h, so
-    // every figure is per-level and the role has to ride along in the label.
-    const perRegion = (
-      label: string,
-      formula: string,
-      get: (r: SteppedRegionSummary) => number
-    ): ZoneDimension[] =>
-      regions.map((r) => ({
-        label: regions.length > 1 ? `${label} (${r.role})` : label,
-        formula,
-        value: fmtWidth(get(r), boardSize),
-      }));
-
-    out['2'] = perRegion('Width', '0.6h', (r) => r.dEdge);
-    if (zone3Exists) {
-      // Grouped per level, so a level's leg width and leg length read as a pair.
-      out['3'] = regions.flatMap((_, i) => [
-        perRegion('Leg width', '0.2h', (r) => r.legWidth)[i]!,
-        perRegion('Leg length', '0.6h', (r) => r.dEdge)[i]!,
-      ]);
-    }
-    return out;
-  }
+  // A stepped building has no whole-building figures — every one of them is
+  // per level, so computeZoneTables goes to steppedZoneDimensions instead.
+  if (isSteppedRoofResult(roof)) return out;
 
   if (isMonoslopeRoofResult(roof)) {
     out['2'] = [
@@ -208,4 +253,69 @@ export function computeZoneDimensions(
     }
   }
   return out;
+}
+
+/**
+ * One level of a stepped building. The band figures come from the governing
+ * region's multipliers — its own `h` when the two roofs are zoned separately,
+ * the taller section's when they're zoned as one. The field (Zone 1/1')
+ * figures come from the pieces as built, since a stepped roof's field is not
+ * a plain inset of the footprint: there's no band along the abutment, and
+ * under the combined treatment the roof is an L-shaped union. A field that
+ * doesn't fill its own bounding box has no honest width or length, so it
+ * contributes no figures — just its area, and the note the panel prints.
+ */
+function steppedZoneDimensions(
+  section: SteppedSection,
+  boardSize?: number
+): Partial<Record<AnyZoneId, ZoneDimension[]>> {
+  const { region, extents } = section;
+  const out: Partial<Record<AnyZoneId, ZoneDimension[]>> = {};
+  const push = (zoneId: AnyZoneId, row: ZoneDimension) => {
+    (out[zoneId] ??= []).push(row);
+  };
+
+  if (extents['2']) push('2', { label: 'Width', formula: '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+  if (extents['3']) {
+    push('3', { label: 'Leg width', formula: '0.2h', value: fmtWidth(region.legWidth, boardSize) });
+    push('3', { label: 'Leg length', formula: '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+  }
+
+  const zone1 = extents['1'];
+  const zone1Prime = extents["1'"];
+  if (zone1 && zone1Prime) {
+    // Zone 1 is the ring between the 0.6h and 1.2h lines here — a band
+    // figure, like Zone 2's, not an extent.
+    const band = Math.max(0, roundIfBoard(region.dInterior, boardSize) - roundIfBoard(region.dEdge, boardSize));
+    push('1', { label: 'Width', formula: '1.2h - 0.6h', value: fmt(band) });
+  } else if (zone1?.rectangular) {
+    push('1', { label: 'Width', value: fmt(zone1.width) });
+    push('1', { label: 'Length', value: fmt(zone1.length) });
+  }
+  if (zone1Prime?.rectangular) {
+    push("1'", { label: 'Width', value: fmt(zone1Prime.width) });
+    push("1'", { label: 'Length', value: fmt(zone1Prime.length) });
+  }
+  return out;
+}
+
+/** The board-rounded figure the geometry was actually built from, or the exact one when rounding is off. */
+const roundIfBoard = (n: number, boardSize?: number) =>
+  boardSize && boardSize > 0 ? roundUpToBoard(n, boardSize) : n;
+
+/**
+ * Wall zones of one section. Zone 5 is the corner strip of width `a` running
+ * the full wall height; Zone 4 is the field left over, so it has no width of
+ * its own. `a` is shown exact — computeWallZones takes no board size, so the
+ * wall geometry is never rounded and a rounded figure here would claim
+ * otherwise. Each section of a stepped building keeps its own `a`, which is
+ * why this takes the walls rather than the whole result.
+ */
+function addWallDimensions(
+  out: Partial<Record<AnyZoneId, ZoneDimension[]>>,
+  walls: ComputationResult['walls']
+): void {
+  if (walls.pieces.some((p) => p.zoneId === '5')) {
+    (out['5'] ??= []).push({ label: 'Width', formula: 'a', value: fmt(walls.a.a) });
+  }
 }

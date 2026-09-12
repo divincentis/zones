@@ -35,6 +35,7 @@ import {
 import { ZoneQuad } from './ZoneQuad';
 import { DimensionLine } from './Dimension3D';
 import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
+import { steppedSections, type PlanRect } from '../lib/steppedSections';
 import { fmt, fmtDoubledWidth, fmtWidth, roundUpToBoard } from '../lib/zoneDimensions';
 
 interface Props {
@@ -527,11 +528,18 @@ function MonoslopeRoofDimensions({
 }
 
 /**
- * Stepped-building call-outs. The zone bands themselves are dimensioned per
- * roof level — under the separate (>= 10 ft) treatment the two sections have
- * different `h`, so a single band width would be wrong for one of them — plus
- * the step height itself, drawn on the shared wall, which is the dimension
- * that decides which figure governs in the first place.
+ * Stepped-building call-outs, drawn per physical section — under the separate
+ * (>= 10 ft) treatment the two sections have different `h`, so a single band
+ * width would be wrong for one of them, and even under the combined
+ * treatment, where one `h` covers both, the two roof planes sit at different
+ * elevations and each needs its figures over its own rectangle. Plus the step
+ * height itself, drawn on the shared wall, which is the dimension that
+ * decides which figure governs in the first place.
+ *
+ * Two things make this more than RoofDimensions per section: the edge against
+ * the other section carries no band (so the call-outs anchor on a free edge),
+ * and the field zones are not a plain inset of the footprint (so Zone 1/1'
+ * are measured off the built pieces — see steppedSections).
  */
 function SteppedRoofDimensions({
   result,
@@ -544,162 +552,134 @@ function SteppedRoofDimensions({
   facing: Facing;
   boardSize?: number | null;
 }) {
-  const { building, roof, step } = result;
+  const { roof, step } = result;
   if (!isSteppedRoofResult(roof) || !step) return null;
 
-  const boundsOf = (vertices: Vec2[]) => {
-    const xs = vertices.map((v) => v[0]);
-    const ys = vertices.map((v) => v[1]);
-    return {
-      minX: Math.min(...xs),
-      maxX: Math.max(...xs),
-      minY: Math.min(...ys),
-      maxY: Math.max(...ys),
-    };
-  };
-
-  // Under the combined treatment there is only one roof and one `h`, so the
-  // band is called out once over the whole union rather than twice.
-  const targets =
-    roof.treatment === 'separate'
-      ? [
-          {
-            region: roof.regions.find((r) => r.role === 'lower')!,
-            vertices: building.vertices,
-            elevation: roof.lower.elevation,
-            role: 'lower',
-          },
-          {
-            region: roof.regions.find((r) => r.role === 'upper')!,
-            vertices: step.upper.vertices,
-            elevation: roof.upper.elevation,
-            role: 'upper',
-          },
-        ]
-      : [
-          {
-            region: roof.regions[0]!,
-            vertices: [...building.vertices, ...step.upper.vertices],
-            elevation: roof.upper.elevation,
-            role: 'combined',
-          },
-        ];
-
+  const sections = steppedSections(result);
   const { sx, sy } = facing;
   const abutMidX = (roof.abutment.from[0] + roof.abutment.to[0]) / 2;
   const abutMidY = (roof.abutment.from[1] + roof.abutment.to[1]) / 2;
 
   return (
     <group>
-      {targets.map((target, i) => {
-        const b = boundsOf(target.vertices);
-        const nearX = sx > 0 ? b.maxX : b.minX;
-        const nearY = sy > 0 ? b.maxY : b.minY;
-        const dirX = sx > 0 ? -1 : 1;
-        const dirY = sy > 0 ? -1 : 1;
-        const dEdgeYExact = Math.min(target.region.dEdge, (b.maxY - b.minY) / 2);
-        const dEdgeXExact = Math.min(target.region.dEdge, (b.maxX - b.minX) / 2);
+      {sections.map((section) => {
+        const { rect, region, extents, role } = section;
+        const spanX = rect.x1 - rect.x0;
+        const spanY = rect.y1 - rect.y0;
+
+        const dEdgeXExact = Math.min(region.dEdge, spanX / 2);
+        const dEdgeYExact = Math.min(region.dEdge, spanY / 2);
         // Board-rounded — drives line positions to match the actual, also-
         // rounded 3D pieces; fmtWidth below still gets the exact value.
         const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
-        const dEdgeY = Math.min(round(target.region.dEdge), (b.maxY - b.minY) / 2);
-        const dEdgeX = Math.min(round(target.region.dEdge), (b.maxX - b.minX) / 2);
-        const legWExact = Math.min(target.region.legWidth, dEdgeXExact, dEdgeYExact);
-        const legW = Math.min(round(target.region.legWidth), dEdgeX, dEdgeY);
-        const y = target.elevation + Math.max(0.3, maxSpan * 0.004);
+        const dEdgeX = Math.min(round(region.dEdge), spanX / 2);
+        const dEdgeY = Math.min(round(region.dEdge), spanY / 2);
+        const dIntY = Math.min(round(region.dInterior), spanY / 2);
+        const legWExact = Math.min(region.legWidth, dEdgeXExact, dEdgeYExact);
+        const legW = Math.min(round(region.legWidth), dEdgeX, dEdgeY);
+        const y = section.elevation + Math.max(0.3, maxSpan * 0.004);
         const at = (x: number, planY: number): Vec3 => planToWorld([x, planY], y);
 
-        // Zone 1/1' — this region's field/interior residual, present only
-        // when the region is wide enough to clear both edge bands. A region's
-        // pieces keep the elevation of the physical rect they sit on, which
-        // is what tells lower/upper apart under the 'separate' treatment; the
-        // 'combined' treatment has only one target, so no filter is needed.
-        const regionPieces =
-          roof.treatment === 'combined' ? roof.pieces : roof.pieces.filter((p) => p.elevation === target.elevation);
-        const zone1Exists = regionPieces.some((p) => p.zoneId === '1' || p.zoneId === "1'");
-        const dIntY = Math.min(round(target.region.dInterior), (b.maxY - b.minY) / 2);
-        const dIntX = Math.min(round(target.region.dInterior), (b.maxX - b.minX) / 2);
-        const zone1PrimeWidth = Math.max(0, b.maxY - b.minY - 2 * dIntY);
-        const zone1PrimeLength = Math.max(0, b.maxX - b.minX - 2 * dIntX);
-        // As in RoofDimensions: with a Zone 1' beyond it, Zone 1 is the ring
-        // band between the 0.6h and 1.2h lines; without one it's the whole
-        // inner residual. Either way it gets its own call-out.
-        const zone1Width = Math.max(0, b.maxY - b.minY - 2 * dEdgeY);
+        // Anchor the band call-outs on a FREE edge of this section. The edge
+        // against the other section carries no band at all (the lower roof is
+        // sheltered by the taller wall under Fig. 3.2.2b; the shared line is
+        // interior to the single roof under Fig. 3.2.2c), so dimensioning a
+        // band there would draw a figure the roof doesn't have — if the
+        // camera happens to face that edge, use the opposite one.
+        const facingXSide = sx > 0 ? 'x1' : 'x0';
+        const facingYSide = sy > 0 ? 'y1' : 'y0';
+        const xSide = section.shelteredSide === facingXSide ? (sx > 0 ? 'x0' : 'x1') : facingXSide;
+        const ySide = section.shelteredSide === facingYSide ? (sy > 0 ? 'y0' : 'y1') : facingYSide;
+        const nearX = xSide === 'x1' ? rect.x1 : rect.x0;
+        const nearY = ySide === 'y1' ? rect.y1 : rect.y0;
+        const dirX = xSide === 'x1' ? -1 : 1;
+        const dirY = ySide === 'y1' ? -1 : 1;
+
+        // Zone 1/1' as BUILT, not as re-derived from the footprint: on a
+        // stepped building the field is not a plain inset (no band along the
+        // abutment), so only the pieces know where it actually starts and
+        // stops. A field that doesn't fill its own bounding box has no honest
+        // width/length, so it gets no extent call-out — see ZoneExtent.
+        const zone1 = extents['1'];
+        const zone1Prime = extents["1'"];
+        // Zone 1 is the ring between the two inset lines when a Zone 1' sits
+        // inside it, and the whole field otherwise.
         const zone1BandWidth = Math.max(0, dIntY - dEdgeY);
 
         // Two side-by-side columns (mirroring RoofDimensions' flat-roof
-        // treatment) so the Zone 2 band and Zone 1/1' width dimensions land
+        // treatment) so the Zone 2 band and Zone 1 width dimensions land
         // inside their own zone instead of overlapping each other.
         const gap = Math.max(2, maxSpan * 0.03);
-        const midX = (b.minX + b.maxX) / 2;
-        const clampX = (x: number) => Math.min(Math.max(x, b.minX + dEdgeX + gap * 0.3), b.maxX - dEdgeX - gap * 0.3);
-        const bandX = clampX(zone1Exists ? midX - gap / 2 : midX);
-        const interiorX = clampX(midX + gap / 2);
-        // Offset to the far half of Zone 1', away from the camera — see the
-        // equivalent row in RoofDimensions.
-        const zone1PrimeMinY = b.minY + dIntY;
-        const zone1PrimeMaxY = b.maxY - dIntY;
-        const lengthRowY =
-          sy > 0 ? zone1PrimeMinY + zone1PrimeWidth * 0.25 : zone1PrimeMaxY - zone1PrimeWidth * 0.25;
+        const midX = (rect.x0 + rect.x1) / 2;
+        const clampX = (x: number) => Math.min(Math.max(x, rect.x0 + dEdgeX + gap * 0.3), rect.x1 - dEdgeX - gap * 0.3);
+        const bandX = clampX(zone1 ? midX - gap / 2 : midX);
+        // Zone 1/1' call-outs sit on the zone's own box, offset from its
+        // center so the two don't stack on one point; the length row takes
+        // the far half, away from the camera (see RoofDimensions).
+        const fieldColumn = (box: PlanRect) => Math.min(box.x1, Math.max(box.x0, (box.x0 + box.x1) / 2 + gap / 2));
+        const fieldRow = (box: PlanRect) =>
+          sy > 0 ? box.y0 + (box.y1 - box.y0) * 0.25 : box.y1 - (box.y1 - box.y0) * 0.25;
 
         return (
-          <group key={i}>
+          <group key={role}>
             <DimensionLine
               from={at(bandX, nearY)}
               to={at(bandX, nearY + dirY * dEdgeY)}
-              label={`Zone 2 (${target.role}) = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
+              label={`Zone 2 (${role}) = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
               color={AMBER}
               priority={DIM_PRIORITY.zone2}
               retreat
             />
-            {legW > 1e-6 && (
+            {legW > 1e-6 && extents['3'] && (
               <DimensionLine
                 from={at(nearX, nearY + (dirY * legW) / 2)}
                 to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-                label={`Zone 3 leg W (${target.role}) = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
+                label={`Zone 3 leg W (${role}) = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
                 color={BLUE}
                 priority={DIM_PRIORITY.zone3}
                 retreat
               />
             )}
-            {zone1Exists &&
-              (target.region.hasZone1Prime ? (
-                <>
-                  <DimensionLine
-                    from={at(bandX, nearY + dirY * dEdgeY)}
-                    to={at(bandX, nearY + dirY * dIntY)}
-                    label={`Zone 1 (${target.role}) = ${fmt(zone1BandWidth)}`}
-                    color={GREEN}
-                    priority={DIM_PRIORITY.zone1}
-                    retreat
-                  />
-                  <DimensionLine
-                    from={at(interiorX, zone1PrimeMinY)}
-                    to={at(interiorX, zone1PrimeMaxY)}
-                    label={`Zone 1' W (${target.role}) = ${fmt(zone1PrimeWidth)}`}
-                    color={GREEN}
-                    priority={DIM_PRIORITY.zone1Prime}
-                    retreat
-                  />
-                  <DimensionLine
-                    from={at(b.minX + dIntX, lengthRowY)}
-                    to={at(b.maxX - dIntX, lengthRowY)}
-                    label={`Zone 1' L (${target.role}) = ${fmt(zone1PrimeLength)}`}
-                    color={GREEN}
-                    priority={DIM_PRIORITY.zone1Prime}
-                    retreat
-                  />
-                </>
-              ) : (
+            {zone1 && zone1Prime && (
+              <DimensionLine
+                from={at(bandX, nearY + dirY * dEdgeY)}
+                to={at(bandX, nearY + dirY * dIntY)}
+                label={`Zone 1 (${role}) = ${fmt(zone1BandWidth)}`}
+                color={GREEN}
+                priority={DIM_PRIORITY.zone1}
+                retreat
+              />
+            )}
+            {zone1 && !zone1Prime && zone1.rectangular && (
+              <DimensionLine
+                from={at(fieldColumn(zone1), zone1.y0)}
+                to={at(fieldColumn(zone1), zone1.y1)}
+                label={`Zone 1 (${role}) = ${fmt(zone1.width)}`}
+                color={GREEN}
+                priority={DIM_PRIORITY.zone1}
+                retreat
+              />
+            )}
+            {zone1Prime?.rectangular && (
+              <>
                 <DimensionLine
-                  from={at(interiorX, b.minY + dEdgeY)}
-                  to={at(interiorX, b.maxY - dEdgeY)}
-                  label={`Zone 1 (${target.role}) = ${fmt(zone1Width)}`}
+                  from={at(fieldColumn(zone1Prime), zone1Prime.y0)}
+                  to={at(fieldColumn(zone1Prime), zone1Prime.y1)}
+                  label={`Zone 1' W (${role}) = ${fmt(zone1Prime.width)}`}
                   color={GREEN}
-                  priority={DIM_PRIORITY.zone1}
+                  priority={DIM_PRIORITY.zone1Prime}
                   retreat
                 />
-              ))}
+                <DimensionLine
+                  from={at(zone1Prime.x0, fieldRow(zone1Prime))}
+                  to={at(zone1Prime.x1, fieldRow(zone1Prime))}
+                  label={`Zone 1' L (${role}) = ${fmt(zone1Prime.length)}`}
+                  color={GREEN}
+                  priority={DIM_PRIORITY.zone1Prime}
+                  retreat
+                />
+              </>
+            )}
           </group>
         );
       })}

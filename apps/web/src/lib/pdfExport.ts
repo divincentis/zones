@@ -6,26 +6,12 @@ import {
   type ComputationResult,
   type FormState,
 } from './buildModel';
-import { readZoneHexes, ZONE_LABELS, type AnyZoneId } from './zoneColors';
-import { computeZoneDimensions } from './zoneDimensions';
+import { readZoneHexes, ZONE_LABELS } from './zoneColors';
+import { computeZoneTables } from './zoneDimensions';
 
 const PRELIMINARY_NOTICE =
   'Preliminary — for coordination and takeoff. Not for construction. Not sealed. ' +
   'Geometry only; no pressures, no design loads.';
-
-function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
-  const ids: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
-  const wallPieces = result.step
-    ? [...result.walls.pieces, ...result.step.upperWalls.pieces]
-    : result.walls.pieces;
-  return ids
-    .map((zoneId) => {
-      const source = zoneId === '4' || zoneId === '5' ? wallPieces : result.roof.pieces;
-      const area = source.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
-      return { zoneId, area };
-    })
-    .filter((z) => z.area > 0);
-}
 
 /**
  * The 3D viewport's dimension labels are DOM elements (drei's `Html`)
@@ -194,51 +180,64 @@ export function exportZonePdf(
   }
 
   y += 14;
-  doc.setFontSize(11);
-  doc.text('Zone areas', margin, y);
-  y += 16;
-  doc.setFontSize(9);
-  const areas = zoneAreas(result);
-  const dimensions = computeZoneDimensions(result, boardSize);
+  const tables = computeZoneTables(result, boardSize);
   const zoneHexes = readZoneHexes();
   const swatchSize = 8;
   const labelX = margin + swatchSize + 6;
-  if (boardSize && boardSize > 0) {
-    doc.setFontSize(8);
-    doc.setTextColor(120, 120, 120);
-    doc.text(`Widths rounded up to ${boardSize} ft boards where shown (exact width shown as a minimum).`, margin, y);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    y += 14;
-  }
   const valueX = margin + 160;
-  for (const { zoneId, area } of areas) {
+  const pageBreak = () => {
     if (y > pageHeight - margin) {
       doc.addPage();
       y = margin;
     }
-    doc.setFillColor(zoneHexes[zoneId]);
-    doc.rect(margin, y - swatchSize + 2, swatchSize, swatchSize, 'F');
-    doc.text(ZONE_LABELS[zoneId], labelX, y);
-    doc.text(`${area.toFixed(1)} ft²`, valueX, y);
-    y += 12;
+  };
 
-    // One line per figure, mirroring the panel's sub-rows: name and
-    // multiplier on the left, the figure itself in the value column.
-    for (const row of dimensions[zoneId] ?? []) {
-      if (y > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-      }
+  // One block per roof — a stepped building is listed per level, matching the
+  // panel, since every figure on it is per level.
+  for (const table of tables) {
+    pageBreak();
+    doc.setFontSize(11);
+    doc.text(
+      table.elevation !== undefined
+        ? `${table.title} — elevation ${table.elevation.toFixed(1)} ft`
+        : table.title,
+      margin,
+      y
+    );
+    y += 16;
+    doc.setFontSize(9);
+    if (boardSize && boardSize > 0) {
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text(row.formula ? `${row.label} — ${row.formula}` : row.label, margin + 14, y);
-      doc.text(row.value, valueX, y);
+      doc.text(`Widths rounded up to ${boardSize} ft boards where shown (exact width shown as a minimum).`, margin, y);
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
-      y += 12;
+      y += 14;
     }
-    y += 4;
+
+    for (const { zoneId, area, rows } of table.zones) {
+      pageBreak();
+      doc.setFillColor(zoneHexes[zoneId]);
+      doc.rect(margin, y - swatchSize + 2, swatchSize, swatchSize, 'F');
+      doc.text(ZONE_LABELS[zoneId], labelX, y);
+      doc.text(`${area.toFixed(1)} ft²`, valueX, y);
+      y += 12;
+
+      // One line per figure, mirroring the panel's sub-rows: name and
+      // multiplier on the left, the figure itself in the value column.
+      for (const row of rows) {
+        pageBreak();
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        doc.text(row.formula ? `${row.label} — ${row.formula}` : row.label, margin + 14, y);
+        doc.text(row.value, valueX, y);
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(9);
+        y += 12;
+      }
+      y += 4;
+    }
+    y += 10;
   }
 
   y += 14;

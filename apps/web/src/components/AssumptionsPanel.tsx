@@ -7,7 +7,8 @@ import {
   type FormState,
 } from '../lib/buildModel';
 import type { HoverInfo } from '../lib/hoverInfo';
-import { computeZoneDimensions } from '../lib/zoneDimensions';
+import { computeZoneTables, type ZoneTable } from '../lib/zoneDimensions';
+import { steppedSections } from '../lib/steppedSections';
 import { ZONE_LABELS, ZONE_DESCRIPTIONS, useZoneColors, type AnyZoneId } from '../lib/zoneColors';
 
 interface Props {
@@ -18,29 +19,23 @@ interface Props {
   boardSize: number | null;
 }
 
-function zoneAreas(result: ComputationResult): Array<{ zoneId: AnyZoneId; area: number }> {
-  const ids: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
-  // Wall areas cover both sections of a stepped building; roof pieces already
-  // do, since the stepped algorithm zones both levels in one pass.
-  const wallPieces = result.step
-    ? [...result.walls.pieces, ...result.step.upperWalls.pieces]
-    : result.walls.pieces;
-  return ids
-    .map((zoneId) => {
-      const source = zoneId === '4' || zoneId === '5' ? wallPieces : result.roof.pieces;
-      const area = source.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
-      return { zoneId, area };
-    })
-    .filter((z) => z.area > 0);
-}
-
 export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
   const { roof, walls, step } = result;
-  const areas = zoneAreas(result);
   const stepped = isSteppedRoofResult(roof);
-  const dimensions = computeZoneDimensions(result, boardSize ?? undefined);
+  const tables = computeZoneTables(result, boardSize ?? undefined);
+  // Field zones that can't be given a width/length because they don't fill
+  // their own bounding box — they wrap the abutment, so only an area is
+  // honest. Named here rather than left as a silent gap in the table.
+  const unmeasurableFields = (stepped ? steppedSections(result) : []).flatMap((section) => {
+    const zone1 = section.extents['1'];
+    const zone1Prime = section.extents["1'"];
+    const out: string[] = [];
+    if (zone1 && !zone1Prime && !zone1.rectangular) out.push(`Zone 1 (${section.role})`);
+    if (zone1Prime && !zone1Prime.rectangular) out.push(`Zone 1' (${section.role})`);
+    return out;
+  });
   const colors = useZoneColors();
-  const [expandedZone, setExpandedZone] = useState<AnyZoneId | null>(null);
+  const [expandedZone, setExpandedZone] = useState<ExpandedZone | null>(null);
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -169,6 +164,15 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
           Wall zones keep each section's own <code>a</code>; the lower section's buried wall is
           excluded and the upper section's shared wall starts at the lower roof. Overhangs are not
           modeled at an abutment — see scope doc §10.7.
+          {unmeasurableFields.length > 0 && (
+            <>
+              {' '}
+              {unmeasurableFields.join(' and ')} {unmeasurableFields.length > 1 ? 'wrap' : 'wraps'}{' '}
+              the abutment rather than sitting as a rectangle, so {unmeasurableFields.length > 1 ? 'they carry' : 'it carries'}{' '}
+              an area only — no single width or length describes {unmeasurableFields.length > 1 ? 'them' : 'it'}, in
+              the table or in the 3D view.
+            </>
+          )}
           {(form.parapetHeight > 0 || form.stepParapetHeight > 0) && (
             <>
               {' '}
@@ -197,7 +201,76 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
         )
       )}
 
-      <h3 style={SECTION_TITLE}>Zone areas</h3>
+      {/* A stepped building gets a table per level, under one section title;
+          a plain building's single table is titled "Zone areas" itself. */}
+      {tables.length > 1 && <h3 style={SECTION_TITLE}>Zone areas</h3>}
+      {tables.map((table) => (
+        <ZoneAreaTable
+          key={table.title}
+          table={table}
+          standalone={tables.length === 1}
+          hovered={hovered}
+          colors={colors}
+          expandedZone={expandedZone}
+          onToggleZone={(zoneId) =>
+            setExpandedZone(expandedZone?.table === table.title && expandedZone.zoneId === zoneId
+              ? null
+              : { table: table.title, zoneId })
+          }
+        />
+      ))}
+
+      <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
+        Sources: roof zones —{' '}
+        {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || stepped
+          ? roof.source
+          : 'FM Global 1-28 Fig 3.2.2a'}
+        .
+        Wall zones — a-parameter formula. See scope doc Addendum §10.
+      </div>
+    </div>
+  );
+}
+
+
+/** Expanded-description key: a zone within one table, since a stepped building lists the same zone twice. */
+interface ExpandedZone {
+  table: string;
+  zoneId: AnyZoneId;
+}
+
+/**
+ * One roof's zones: area per zone, with the figures that describe it beneath.
+ * A stepped building gets one of these per level rather than one table with
+ * every figure qualified "(lower)"/"(upper)" — the heading carries the level,
+ * and a takeoff is ordered per roof anyway.
+ */
+function ZoneAreaTable({
+  table,
+  standalone,
+  hovered,
+  colors,
+  expandedZone,
+  onToggleZone,
+}: {
+  table: ZoneTable;
+  /** The only table, so its own title is the panel's section heading. */
+  standalone: boolean;
+  hovered: HoverInfo | null;
+  colors: Record<AnyZoneId, string>;
+  expandedZone: ExpandedZone | null;
+  onToggleZone: (zoneId: AnyZoneId) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <h4 style={standalone ? SECTION_TITLE : TABLE_TITLE}>
+        {table.title}
+        {table.elevation !== undefined && (
+          <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+            {' '}— elevation {table.elevation.toFixed(1)} ft
+          </span>
+        )}
+      </h4>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--gridline)' }}>
@@ -206,16 +279,15 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
           </tr>
         </thead>
         <tbody>
-          {areas.map(({ zoneId, area }) => {
-            const rows = dimensions[zoneId] ?? [];
-            const expanded = expandedZone === zoneId;
+          {table.zones.map(({ zoneId, area, rows }) => {
+            const expanded = expandedZone?.table === table.title && expandedZone.zoneId === zoneId;
             return (
               <Fragment key={zoneId}>
                 <tr style={{ background: hovered?.zoneId === zoneId ? 'var(--surface-2)' : 'transparent' }}>
                   <td style={{ padding: '3px 0 0' }}>
                     <button
                       type="button"
-                      onClick={() => setExpandedZone(expanded ? null : zoneId)}
+                      onClick={() => onToggleZone(zoneId)}
                       aria-expanded={expanded}
                       style={{
                         display: 'flex',
@@ -241,7 +313,16 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
                       {ZONE_LABELS[zoneId]}
                     </button>
                   </td>
-                  <td style={{ padding: '3px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  <td
+                    style={{
+                      padding: '3px 0 0',
+                      textAlign: 'right',
+                      fontVariantNumeric: 'tabular-nums',
+                      // A five-figure area would otherwise wrap onto a second
+                      // line; the zone-name column has the room to give.
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {area.toFixed(1)} ft²
                   </td>
                 </tr>
@@ -289,18 +370,16 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
           })}
         </tbody>
       </table>
-
-      <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
-        Sources: roof zones —{' '}
-        {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || stepped
-          ? roof.source
-          : 'FM Global 1-28 Fig 3.2.2a'}
-        .
-        Wall zones — a-parameter formula. See scope doc Addendum §10.
-      </div>
     </div>
   );
 }
+
+/** Heading over one roof's zone table — the level a stepped building's figures belong to. */
+const TABLE_TITLE = {
+  fontSize: 12,
+  fontWeight: 600,
+  margin: '0 0 4px',
+};
 
 /** Sub-row cell under a zone's area row: the figure's name/multiplier and its value. */
 const DETAIL_CELL = {
