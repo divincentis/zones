@@ -909,9 +909,13 @@ function WallCornerDimensions({
   const farX = facing.sx > 0 ? Math.min(...xs) : Math.max(...xs);
   const farY = facing.sy > 0 ? Math.min(...ys) : Math.max(...ys);
 
-  const dimY = Math.max(0.5, maxSpan * 0.015);
-  const wallOffset = Math.max(1.5, maxSpan * 0.02);
-  const labelOffset = Math.max(2, maxSpan * 0.032);
+  // Fixed, not maxSpan-scaled: these keep the corner call-out pinned near
+  // the ground and close to the corner regardless of building size — a
+  // maxSpan-proportional offset used to send the line and label climbing
+  // and drifting away from the building as it got larger.
+  const dimY = 0.5;
+  const wallOffset = 1.5;
+  const labelOffset = 2;
   const at = (p: Vec2): Vec3 => planToWorld(p, dimY);
 
   return (
