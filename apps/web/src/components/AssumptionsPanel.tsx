@@ -219,15 +219,6 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
           }
         />
       ))}
-
-      <div style={{ marginTop: 12, fontSize: 10, color: 'var(--text-muted)' }}>
-        Sources: roof zones —{' '}
-        {isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || stepped
-          ? roof.source
-          : 'FM Global 1-28 Fig 3.2.2a'}
-        .
-        Wall zones — a-parameter formula. See scope doc Addendum §10.
-      </div>
     </div>
   );
 }

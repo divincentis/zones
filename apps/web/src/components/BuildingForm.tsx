@@ -204,9 +204,6 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
           onChange={(e) => set('projectName', e.target.value)}
         />
       </div>
-      <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
-      <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
-      <NumberField label="Height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
 
       <div style={{ ...ROW_STYLE, display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
@@ -224,6 +221,10 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
           Stepped building (second section at a different roof level)
         </label>
       </div>
+
+      <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
+      <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
+      <NumberField label="Height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
 
       {!stepped && (
         <div style={ROW_STYLE}>
