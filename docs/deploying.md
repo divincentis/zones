@@ -6,55 +6,28 @@ subfolder.
 
 ## Key facts about this setup
 
-- **zbCAD has no local clone.** There is no `/home/matt/projects/zbCAD`
-  folder on this machine. All updates to that repo happen through GitHub's
-  web UI (github.com), not git push.
-- **zbCAD is served by GitHub Pages** directly off the `master` branch root
-  — plain static files, no build step, no `.github/workflows`.
-- **The `zones` project (this repo) is a local git repo, not currently
-  pushed to GitHub.** A `zbcad-zones` GitHub repo exists to mirror it
-  eventually, but `git push` is currently failing there (auth/token issue,
-  unresolved as of this writing) — so for now, commits stay local only.
-  Source history lives on this machine; there is no GitHub backup of it
-  yet. This is unrelated to the zbCAD repo except that this project's
-  build output gets copied over to it.
-- **Vite is configured for the `/zones/` subpath.** `apps/web/vite.config.ts`
-  sets `base: command === 'build' ? '/zones/' : '/'` — already done, don't
-  touch it unless the deploy path changes.
-- **Vite build filenames are fixed** (`index.js`, `index.css`, etc, no
-  content hash) — set via `build.rollupOptions.output` in
-  `apps/web/vite.config.ts`. Re-uploading overwrites files of the same name
-  in place, so there's no accumulation of stale hashed files to clean up.
-- **`zones/index.html`** is what GitHub Pages serves by default at
-  `zbcad.com/zones/`.
+- **Two repos.** `zones` (this repo, `divincentis/zones`, branch `main`) holds
+  the source. `zbCAD` (`divincentis/zbCAD`, branch `main`, local clone at
+  `../zbCAD`) is the GitHub Pages site; the built app lives in its `zones/`
+  folder.
+- **zbCAD is served by GitHub Pages** off `main` at the repo root: plain
+  static files, no build step, no workflows.
+- **Vite is configured for the `/zones/` subpath** (`base` in
+  `apps/web/vite.config.ts`) and uses fixed, non-hashed output filenames.
+- **GoatCounter analytics** is part of `apps/web/index.html`, so builds keep it.
 
-## Deploy steps (manual upload, current process)
+## Deploy steps
 
-1. Build:
+1. From this repo: `scripts/deploy.sh`. It builds the engine and web app and
+   rsyncs `apps/web/dist/` into `../zbCAD/zones/` (deleting files a build no
+   longer produces). Set `ZBCAD_DIR` if the clone lives elsewhere.
+2. In zbCAD, review and ship:
    ```bash
-   cd /home/matt/projects/zones
-   npm run build --workspace=packages/engine
-   npm run build --workspace=apps/web
+   cd ../zbCAD
+   git status
+   git add zones && git commit -m "Deploy zones" && git push
    ```
-   Output lands in `apps/web/dist/`.
-
-2. Rename the output folder to `zones` locally:
-   ```bash
-   cd apps/web
-   rm -rf zones && mv dist zones
-   ```
-
-3. From the `zbCAD` repo root, **Add file → Upload files**, drag the local
-   `zones` folder onto the drop area. GitHub preserves folder structure, so
-   it lands at `zbCAD/zones/...`, overwriting same-named files in place.
-   Commit directly to `master`. (No need to delete the old `zones/` folder
-   first anymore — filenames are fixed, not hashed. The one exception: if a
-   build actually drops a previously-generated file, e.g. an old chunk that
-   no longer exists, that stale file won't get cleaned up by the upload and
-   would need deleting manually.)
-
-4. GitHub Pages rebuilds automatically — live at `https://zbcad.com/zones/`
-   usually within a minute.
+3. Pages updates `https://zbcad.com/zones/` within about a minute.
 
 ## Not currently done, but could be later
 
