@@ -13,7 +13,12 @@ subfolder.
 - **zbCAD is served by GitHub Pages** off `main` at the repo root: plain
   static files, no build step, no workflows.
 - **Vite is configured for the `/zones/` subpath** (`base` in
-  `apps/web/vite.config.ts`) and uses fixed, non-hashed output filenames.
+  `apps/web/vite.config.ts`). The entry files keep fixed names (`index.js`,
+  `index.css`), so `index.html` never changes between deploys. The chunks
+  loaded later — the 3D view and the PDF writer — carry a content hash in
+  their names, so a browser can never pair a cached chunk with an `index.js`
+  from a different build. `rsync --delete` removes the previous build's
+  chunks, so they do not accumulate.
 - **GoatCounter analytics** is part of `apps/web/index.html`, so builds keep it.
 
 ## Deploy steps

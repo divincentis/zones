@@ -108,6 +108,14 @@ function NumberField(props: { label: string; value: number; onChange: (v: number
         style={{ ...FIELD_STYLE, borderColor: unreadable ? 'var(--zone-1)' : undefined }}
         value={text}
         onChange={(e) => handleChange(e.target.value)}
+        onKeyDown={(e) => {
+          // What a number field's arrows did, before this had to be a text
+          // field to take feet and inches: a foot up or down, ten with Shift.
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+          e.preventDefault();
+          const step = (e.shiftKey ? 10 : 1) * (e.key === 'ArrowUp' ? 1 : -1);
+          handleChange(String(Math.max(0, round2((parsed ?? props.value) + step))));
+        }}
         onBlur={() => {
           if (parsed === null) setText(String(props.value));
         }}

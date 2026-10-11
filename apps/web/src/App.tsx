@@ -1,20 +1,64 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BuildingForm } from './components/BuildingForm';
 import { PlanView2D } from './components/PlanView2D';
-import { Scene3D } from './components/Scene3D';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { ProjectBar } from './components/ProjectBar';
 import { computeZones, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
 import type { LengthUnits } from './lib/lengthFormat';
-import { exportZonePdf } from './lib/pdfExport';
 import type { Project } from './lib/project';
 import { clearLinkFromAddress, loadInitialProject, writeAutosave } from './lib/projectStorage';
 import { ZONE_LABELS } from './lib/zoneColors';
 import { APP_VERSION } from './version';
 
 type ViewMode = '3d' | '2d';
+
+/**
+ * The 3D view is most of the app's weight (three.js is over a megabyte) and
+ * none of what a visitor needs first: the form, the figures and the plan all
+ * work without it. So it is a chunk of its own — asked for here, as the app's
+ * own script starts, rather than when the view first renders, so that it
+ * downloads alongside everything else instead of after it.
+ */
+const scene3dModule = import('./components/Scene3D');
+// Observed here so that a failed download is not also an unhandled rejection;
+// the view's error boundary reports it when the view is actually wanted.
+scene3dModule.catch(() => undefined);
+const Scene3D = lazy(() => scene3dModule.then((module) => ({ default: module.Scene3D })));
+
+/**
+ * Catches the 3D view failing to load or to start — a dropped connection, or
+ * a page left open across a deploy, whose chunk is no longer on the server —
+ * and says what to do about it, where it would otherwise blank the whole app.
+ */
+class ViewBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="app-error" role="alert">
+        <h2>The 3D view didn&apos;t load</h2>
+        <p>
+          The plan, the figures and the PDF still work — choose 2D above. Reloading the page usually brings the
+          3D view back.
+        </p>
+        <p style={{ marginTop: 12 }}>
+          <button type="button" className="view-button" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </p>
+      </div>
+    );
+  }
+}
+
+type ExportState = 'idle' | 'working' | 'done' | 'failed';
 
 /**
  * The three panels. Side by side on a wide screen; on a phone only one is
@@ -49,6 +93,7 @@ export function App() {
   const [boardSize, setBoardSize] = useState<number | null>(initial.project.boardSize);
   const [units, setUnits] = useState<LengthUnits>(initial.project.units);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
+  const [exporting, setExporting] = useState<ExportState>('idle');
 
   const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
 
@@ -72,6 +117,22 @@ export function App() {
 
   // Its area is stale the moment the building changes.
   useEffect(() => setTouched(null), [outcome]);
+
+  // The PDF writer is the other heavy piece, wanted only when asked for.
+  const exportPdf = async () => {
+    if (!outcome.ok) return;
+    setExporting('working');
+    try {
+      const { exportZonePdf } = await import('./lib/pdfExport');
+      // From the 3D view the PDF leads with that view as framed; from the
+      // plan there is no framed view, so it leads with the plan.
+      exportZonePdf(view === '3d' ? canvasEl : null, outcome.result, form, boardSize ?? undefined, units, APP_VERSION);
+      setExporting('done');
+    } catch {
+      setExporting('failed');
+    }
+    window.setTimeout(() => setExporting('idle'), 5000);
+  };
 
   const handleHover = (info: HoverInfo | null) => {
     setHovered(info);
@@ -109,57 +170,66 @@ export function App() {
       </aside>
 
       <main className="app-panel app-view" data-active={panel === 'view'}>
-        <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1, display: 'flex', gap: 4 }}>
-          {(['3d', '2d'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setView(mode)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 4,
-                border: '1px solid var(--border)',
-                background: view === mode ? 'var(--surface-2)' : 'var(--surface-1)',
-                color: 'var(--text-primary)',
-                fontWeight: view === mode ? 700 : 400,
-                cursor: 'pointer',
-              }}
-            >
-              {mode.toUpperCase()}
-            </button>
-          ))}
+        <div className="view-bar">
+          <div role="group" aria-label="View" className="view-toggle">
+            {(['3d', '2d'] as ViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className="view-button"
+                aria-pressed={view === mode}
+                onClick={() => setView(mode)}
+              >
+                {mode.toUpperCase()}
+              </button>
+            ))}
+          </div>
           {outcome.ok && (
-            <button
-              // From the 3D view the PDF leads with that view as framed; from
-              // the plan there is no framed view, so it leads with the plan.
-              onClick={() =>
-                exportZonePdf(view === '3d' ? canvasEl : null, outcome.result, form, boardSize ?? undefined, units, APP_VERSION)
-              }
-              disabled={view === '3d' && !canvasEl}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 4,
-                border: '1px solid var(--border)',
-                background: 'var(--surface-1)',
-                color: 'var(--text-primary)',
-                cursor: view === '2d' || canvasEl ? 'pointer' : 'default',
-                opacity: view === '2d' || canvasEl ? 1 : 0.5,
-              }}
-            >
-              Export PDF
-            </button>
+            <div className="view-export">
+              <span role="status">
+                {exporting === 'done'
+                  ? 'PDF saved'
+                  : exporting === 'failed'
+                    ? 'The PDF could not be made — reload and try again'
+                    : ''}
+              </span>
+              <button
+                type="button"
+                className="view-button view-button-primary"
+                onClick={exportPdf}
+                disabled={exporting === 'working' || (view === '3d' && !canvasEl)}
+              >
+                {exporting === 'working' ? 'Preparing…' : 'Export PDF'}
+              </button>
+            </div>
           )}
         </div>
 
         {outcome.ok ? (
           view === '3d' ? (
-            <Scene3D
-              result={outcome.result}
-              onHover={handleHover}
-              hovered={hovered}
-              onCanvasReady={setCanvasEl}
-              boardSize={boardSize}
-              units={units}
-            />
+            <ViewBoundary>
+              {/* While the 3D chunk is on its way the plan stands in for it:
+                  the same building, drawn by code that is already here. */}
+              <Suspense
+                fallback={
+                  <>
+                    <PlanView2D result={outcome.result} onHover={handleHover} hovered={hovered} units={units} />
+                    <div className="view-loading" role="status">
+                      Loading the 3D view…
+                    </div>
+                  </>
+                }
+              >
+                <Scene3D
+                  result={outcome.result}
+                  onHover={handleHover}
+                  hovered={hovered}
+                  onCanvasReady={setCanvasEl}
+                  boardSize={boardSize}
+                  units={units}
+                />
+              </Suspense>
+            </ViewBoundary>
           ) : (
             <PlanView2D result={outcome.result} onHover={handleHover} hovered={hovered} units={units} />
           )
