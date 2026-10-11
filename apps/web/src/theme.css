@@ -1,14 +1,15 @@
 :root {
   color-scheme: light;
-  --surface-0: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --surface-2: #ffffff;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --border: rgba(11, 11, 11, 0.1);
-  --gridline: #e1e0d9;
-  --baseline: #c3c2b7;
+  --surface-0: #f6f4ef;
+  --surface-1: #fffdf8;
+  --surface-2: #fffdf8;
+  --text-primary: #1c1b19;
+  --text-secondary: #6b675f;
+  --text-muted: #9a958a;
+  --border: #d9d4c9;
+  --gridline: #e4dfd4;
+  --baseline: #cdc6b8;
+  --accent: #9a4a1f;
 
   /* Zone categorical slots — fixed order per dataviz skill default palette.
      Roof chain (1' -> 1 -> 2 -> 3) occupies slots 1-4; wall chain (4 -> 5)
@@ -28,15 +29,16 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --surface-0: #0d0d0d;
-    --surface-1: #1a1a19;
-    --surface-2: #232322;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --border: rgba(255, 255, 255, 0.1);
-    --gridline: #2c2c2a;
-    --baseline: #383835;
+    --surface-0: #161614;
+    --surface-1: #1c1b19;
+    --surface-2: #232220;
+    --text-primary: #e9e5dc;
+    --text-secondary: #b5ad9e;
+    --text-muted: #9a958a;
+    --border: #2f2d29;
+    --gridline: #2c2a26;
+    --baseline: #3d3a34;
+    --accent: #e08a55;
 
     --zone-1prime: #3987e5;
     --zone-1: #d95926;
@@ -49,15 +51,16 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-0: #0d0d0d;
-  --surface-1: #1a1a19;
-  --surface-2: #232322;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --border: rgba(255, 255, 255, 0.1);
-  --gridline: #2c2c2a;
-  --baseline: #383835;
+  --surface-0: #161614;
+  --surface-1: #1c1b19;
+  --surface-2: #232220;
+  --text-primary: #e9e5dc;
+  --text-secondary: #b5ad9e;
+  --text-muted: #9a958a;
+  --border: #2f2d29;
+  --gridline: #2c2a26;
+  --baseline: #3d3a34;
+  --accent: #e08a55;
 
   --zone-1prime: #3987e5;
   --zone-1: #d95926;
@@ -90,4 +93,23 @@ select,
 button {
   font-family: inherit;
   font-size: inherit;
+}
+
+/* The "zbCAD /" breadcrumb in the panel title, back to the site's home page —
+   the same link the other tool pages carry in their headers, in the same
+   warm palette as the rest of the site. */
+.brand-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.brand-link:hover,
+.brand-link:focus-visible {
+  color: var(--accent);
+}
+
+.brand-sep {
+  color: var(--border);
+  margin: 0 7px;
+  font-weight: 400;
 }
