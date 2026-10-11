@@ -344,3 +344,17 @@ A top-to-bottom read of `docs/reference/FMDS0128.txt` against the engine found o
 **Still unsourced:** hip roofs (§10.5), monoslope above 30°, overhang and parapet on pitched roofs. **On file but not implemented:** Fig. 3.4.5a (multi-span gables), Fig. 3.4.2a/b (saw-tooth), Fig. 3.4.3 (arched).
 
 **Also in this change:** the "zbCAD /" home link and warm palette that had been patched by hand into the deployed bundle (zbCAD commit `b01dba3`) are now in `App.tsx` and `theme.css`, so `scripts/deploy.sh` no longer removes them. The disclaimer names FM 1-28 as the source of the figures instead of ASCE 7-22.
+
+### 10.10 Update — 2026-10-10: The roof plan becomes a drawing
+
+The 2D view was the piece rectangles the engine happened to produce, filled, with a number on the big ones: no zone dimensions, seams between pieces of one zone, lettering that shrank to nothing on a stepped building, and no way to export it — the PDF was a screenshot of the 3D view and a table.
+
+- **`planSheet.ts` builds a plan sheet**: a flat list of primitives (zone fills, lines, text) in points on a page, with no knowledge of SVG or PDF. `PlanView2D` draws them on screen and `planSheetPdf.ts` writes the same ones into the export as vector line work and real text. This is the plan/writer split the zbCAD repo uses for its own output, for the same reason: the two cannot disagree, and `apps/web/test/planSheet.test.ts` asserts on the sheet without parsing either output.
+- **What the sheet shows.** Zones as zones — lines only where the zone, the roof level or the roof edge changes; a number in each region that has room; a dimension string of every zone break along the bottom and left with the overall beyond it; the wall zones as coloured bars outside the roof edge; the ridge and a downslope arrow on pitched roofs; the wall face dashed under an overhang; the step drawn heavy. On a stepped building each roof level gets its own strings, the upper level's on the side of the plan it is against, because the two roofs' breaks interleave and one shared string does not say whose is whose.
+- **Print sheet**: letter, landscape, at a standard engineering scale (1 in = 20 ft for the default building) with a scale bar, title block, the zone tables beside the plan, and the notes that explain the line types.
+- **The PDF** now has that sheet as well as the report page, and exports from either view: from 3D it leads with the framed view as before and ends with the plan; from the plan it leads with the plan and has no 3D image, since there is no framed view to capture.
+- **Not a reversal of §10.2.** The export is still a PDF and nothing else. There is no SVG or DXF file; the SVG is only how the screen is painted.
+
+**Found while doing it:** jsPDF's built-in Helvetica has no `≤`, `≥` or `θ`, and silently prints the wrong glyph. §10.9's new parameter lines and table rows used all three, so the report page shipped in `2026-10-11.2` shows a stray character in those places. Every string bound for the PDF now goes through `pdfText.ts`. The report's parameter lines are also wrapped; several ran off the right-hand edge.
+
+**Tests:** `apps/web` now has its own suite (`npm test` at the root runs both). It builds the whole PDF headlessly for one of each kind of building; set `ZONES_PDF_DUMP=<dir>` to keep those files and look at them.

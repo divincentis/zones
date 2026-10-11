@@ -9,7 +9,10 @@ import {
   type ComputationResult,
   type FormState,
 } from './buildModel';
-import { readZoneHexes, ZONE_LABELS } from './zoneColors';
+import { pdfSafe } from './pdfText';
+import { buildPlanSheet } from './planSheet';
+import { drawPlanSheet } from './planSheetPdf';
+import { readZoneHexes, ZONE_LABELS, type AnyZoneId } from './zoneColors';
 import { computeZoneTables } from './zoneDimensions';
 
 const PRELIMINARY_NOTICE =
@@ -71,36 +74,14 @@ function drawDimensionLabels(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   });
 }
 
-/** PDF export: the user-framed 3D view plus a tabular zone/area summary (scope §8 Phase 1, §10.2). */
-export function exportZonePdf(
-  canvas: HTMLCanvasElement,
-  result: ComputationResult,
-  form: FormState,
-  boardSize?: number
-): void {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
+/** The 3D viewport as the user framed it, flattened to an image a PDF can hold. */
+export interface CapturedView {
+  dataUrl: string;
+  /** Height over width. */
+  aspect: number;
+}
 
-  const title = form.projectName.trim() || 'Wind Zone Geometry Report';
-  doc.setFontSize(16);
-  doc.text(title, margin, 46);
-
-  let noticeY = 64;
-  if (form.projectName.trim()) {
-    doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Wind Zone Geometry Report', margin, noticeY);
-    doc.setTextColor(0, 0, 0);
-    noticeY += 14;
-  }
-
-  doc.setFontSize(9);
-  doc.setTextColor(140, 100, 0);
-  doc.text(PRELIMINARY_NOTICE, margin, noticeY, { maxWidth: pageWidth - margin * 2 });
-  doc.setTextColor(0, 0, 0);
-
+export function captureView(canvas: HTMLCanvasElement): CapturedView {
   // The 3D viewport's WebGL canvas has a transparent background; JPEG has no
   // alpha channel, so encoding it directly turns the transparent areas black.
   // Flatten onto a white backing canvas first so the PDF page reads as white.
@@ -112,16 +93,126 @@ export function exportZonePdf(
   ctx.fillRect(0, 0, flattened.width, flattened.height);
   ctx.drawImage(canvas, 0, 0);
   drawDimensionLabels(ctx, canvas);
-  const imgData = flattened.toDataURL('image/jpeg', 0.85);
-  const imgW = pageWidth - margin * 2;
-  const imgH = imgW * (canvas.height / canvas.width);
-  const imgY = noticeY + 28;
-  doc.addImage(imgData, 'JPEG', margin, imgY, imgW, imgH);
+  return { dataUrl: flattened.toDataURL('image/jpeg', 0.85), aspect: canvas.height / canvas.width };
+}
 
-  let y = imgY + imgH + 28;
+export interface ZonePdfInput {
+  result: ComputationResult;
+  form: FormState;
+  boardSize?: number;
+  /** The framed 3D view, or null when there isn't one to show (exporting from the plan). */
+  view: CapturedView | null;
+  zoneHexes: Record<AnyZoneId, string>;
+  /** Which page comes first — the one the user was looking at when they exported. */
+  lead: 'view' | 'plan';
+  version: string;
+}
+
+const LETTER = { short: 612, long: 792 };
+
+/** One line describing the building, for the plan sheet's title block. */
+function buildingSummary(form: FormState, result: ComputationResult): string {
+  if (result.step) {
+    return (
+      `Stepped building: ${form.length} × ${form.width} ft at ${form.eaveHeight} ft, ` +
+      `and ${form.stepSpan} × ${form.stepDepth} ft at ${form.stepEaveHeight} ft`
+    );
+  }
+  const size = `${form.length} × ${form.width} ft`;
+  const roof = result.roof;
+  if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof)) {
+    return `${size}, eave height ${form.eaveHeight} ft, ${result.building.roofType} roof at ${Math.round(form.pitchDegrees * 100) / 100}°`;
+  }
+  return `${size}, height ${form.eaveHeight} ft, flat / low-slope roof`;
+}
+
+/**
+ * The whole export: a report page (the framed 3D view when there is one, the
+ * derived parameters, the zone tables) and the plan sheet, drawn to scale as
+ * vector line work. No DOM in here — the caller captures the view and reads
+ * the colours — so the document can be built, and looked at, headlessly.
+ */
+export function buildZonePdf(input: ZonePdfInput): jsPDF {
+  const { result, form, boardSize, zoneHexes, lead } = input;
+  const doc = new jsPDF({ orientation: lead === 'plan' ? 'landscape' : 'portrait', unit: 'pt', format: 'letter' });
+
+  const plan = () => {
+    const roof = result.roof;
+    const sheet = buildPlanSheet(result, {
+      mode: 'print',
+      title: form.projectName.trim() || 'Wind zone plan',
+      subtitle: `Roof and wall wind zones — ${buildingSummary(form, result)}`,
+      notice: PRELIMINARY_NOTICE,
+      tables: computeZoneTables(result, boardSize),
+      notes: [
+        boardSize && boardSize > 0
+          ? `Roof bands are drawn rounded up to ${boardSize} ft boards; each exact width is shown as a minimum.`
+          : undefined,
+        'Coloured bars outside the roof edge show the wall zone along that side.',
+        isSteepRoofResult(roof) ? 'Dash-dot line: ridge. Arrows point down the slope.' : undefined,
+        isMonoslopeRoofResult(roof) ? 'The arrow points down the slope.' : undefined,
+        result.building.roof.overhangDepth > 0 ? 'Dashed line: the wall face under the overhang.' : undefined,
+        result.step ? 'Heavy line: the step between the two roof levels.' : undefined,
+        `Sources: roof — ${roof.source}; walls — ${result.walls.source}.`,
+      ].filter((note): note is string => note !== undefined),
+      footer: `Wind Zone Visualizer v${input.version} · zbcad.com/zones`,
+    });
+    drawPlanSheet(doc, sheet, zoneHexes);
+  };
+
+  if (lead === 'plan') {
+    plan();
+    doc.addPage('letter', 'portrait');
+  }
+  drawReport(doc, input);
+  if (lead !== 'plan') {
+    doc.addPage('letter', 'landscape');
+    plan();
+  }
+  return doc;
+}
+
+/** The report pages: the framed 3D view, the derived parameters, and the zone tables (scope §8 Phase 1, §10.2). */
+function drawReport(doc: jsPDF, { result, form, boardSize, view, zoneHexes }: ZonePdfInput): void {
+  const pageWidth = LETTER.short;
+  const pageHeight = LETTER.long;
+  const margin = 40;
+  // Every string goes through pdfSafe: see pdfText.ts.
+  const put = (text: string, x: number, y: number, options?: { maxWidth?: number }) =>
+    doc.text(pdfSafe(text), x, y, options);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+
+  const title = form.projectName.trim() || 'Wind Zone Geometry Report';
+  doc.setFontSize(16);
+  put(title, margin, 46);
+
+  let noticeY = 64;
+  if (form.projectName.trim()) {
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    put('Wind Zone Geometry Report', margin, noticeY);
+    doc.setTextColor(0, 0, 0);
+    noticeY += 14;
+  }
+
+  doc.setFontSize(9);
+  doc.setTextColor(140, 100, 0);
+  put(PRELIMINARY_NOTICE, margin, noticeY, { maxWidth: pageWidth - margin * 2 });
+  doc.setTextColor(0, 0, 0);
+
+  let y = noticeY + 28;
+  if (view) {
+    const imgW = pageWidth - margin * 2;
+    // A tall, narrow viewport would otherwise push everything else off the page.
+    const imgH = Math.min(imgW * view.aspect, pageHeight * 0.45);
+    const drawnW = imgH / view.aspect;
+    doc.addImage(view.dataUrl, 'JPEG', margin + (imgW - drawnW) / 2, y, drawnW, imgH);
+    y += imgH + 28;
+  }
 
   doc.setFontSize(11);
-  doc.text('Building & derived parameters', margin, y);
+  put('Building & derived parameters', margin, y);
   y += 16;
   doc.setFontSize(9);
   const roof = result.roof;
@@ -199,19 +290,22 @@ export function exportZonePdf(
               : undefined,
         ].filter((line): line is string => line !== undefined);
   for (const line of paramLines) {
-    doc.text(line, margin, y);
-    y += 13;
+    // Wrapped: several of these run well past the page's width.
+    for (const wrapped of doc.splitTextToSize(pdfSafe(line), pageWidth - margin * 2) as string[]) {
+      doc.text(wrapped, margin, y);
+      y += 12;
+    }
+    y += 1;
   }
 
   y += 14;
   const tables = computeZoneTables(result, boardSize);
-  const zoneHexes = readZoneHexes();
   const swatchSize = 8;
   const labelX = margin + swatchSize + 6;
   const valueX = margin + 160;
   const pageBreak = () => {
     if (y > pageHeight - margin) {
-      doc.addPage();
+      doc.addPage('letter', 'portrait');
       y = margin;
     }
   };
@@ -221,7 +315,7 @@ export function exportZonePdf(
   for (const table of tables) {
     pageBreak();
     doc.setFontSize(11);
-    doc.text(
+    put(
       table.elevation !== undefined
         ? `${table.title} — elevation ${table.elevation.toFixed(1)} ft`
         : table.title,
@@ -233,7 +327,7 @@ export function exportZonePdf(
     if (table.areaNote) {
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text(table.areaNote, margin, y);
+      put(table.areaNote, margin, y);
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       y += 14;
@@ -241,7 +335,7 @@ export function exportZonePdf(
     if (boardSize && boardSize > 0) {
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text(`Widths rounded up to ${boardSize} ft boards where shown (exact width shown as a minimum).`, margin, y);
+      put(`Widths rounded up to ${boardSize} ft boards where shown (exact width shown as a minimum).`, margin, y);
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       y += 14;
@@ -251,8 +345,8 @@ export function exportZonePdf(
       pageBreak();
       doc.setFillColor(zoneHexes[zoneId]);
       doc.rect(margin, y - swatchSize + 2, swatchSize, swatchSize, 'F');
-      doc.text(ZONE_LABELS[zoneId], labelX, y);
-      doc.text(`${area.toFixed(1)} ft²`, valueX, y);
+      put(ZONE_LABELS[zoneId], labelX, y);
+      put(`${area.toFixed(1)} ft²`, valueX, y);
       y += 12;
 
       // One line per figure, mirroring the panel's sub-rows: name and
@@ -261,8 +355,8 @@ export function exportZonePdf(
         pageBreak();
         doc.setFontSize(8);
         doc.setTextColor(120, 120, 120);
-        doc.text(row.formula ? `${row.label} — ${row.formula}` : row.label, margin + 14, y);
-        doc.text(row.value, valueX, y);
+        put(row.formula ? `${row.label} — ${row.formula}` : row.label, margin + 14, y);
+        put(row.value, valueX, y);
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(9);
         y += 12;
@@ -274,19 +368,41 @@ export function exportZonePdf(
 
   y += 14;
   if (y > pageHeight - margin) {
-    doc.addPage();
+    doc.addPage('letter', 'portrait');
     y = margin;
   }
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
-  doc.text(
+  put(
     `Sources: roof zones — ${roof.source}. Wall zones — ${result.walls.source}` +
       `${result.step && result.step.upperWalls.source !== result.walls.source ? ` (lower), ${result.step.upperWalls.source} (upper)` : ''}.`,
     margin,
     y,
     { maxWidth: pageWidth - margin * 2 }
   );
+}
 
+/**
+ * Builds the PDF and hands it to the browser to save. `canvas` is the 3D
+ * viewport when exporting from it, and null from the plan view, where there
+ * is no framed view to include.
+ */
+export function exportZonePdf(
+  canvas: HTMLCanvasElement | null,
+  result: ComputationResult,
+  form: FormState,
+  boardSize: number | undefined,
+  version: string
+): void {
+  const doc = buildZonePdf({
+    result,
+    form,
+    boardSize,
+    view: canvas ? captureView(canvas) : null,
+    zoneHexes: readZoneHexes(),
+    lead: canvas ? 'view' : 'plan',
+    version,
+  });
   const fileSlug = form.projectName.trim()
     ? form.projectName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()
     : 'wind-zone-report';

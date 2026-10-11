@@ -10,6 +10,8 @@
   --gridline: #e4dfd4;
   --baseline: #cdc6b8;
   --accent: #9a4a1f;
+  /* Dimension strings on the plan — a drafting blue, lifted in the dark theme to stay legible. */
+  --dimension: #1170a8;
 
   /* Zone categorical slots — fixed order per dataviz skill default palette.
      Roof chain (1' -> 1 -> 2 -> 3) occupies slots 1-4; wall chain (4 -> 5)
@@ -39,6 +41,7 @@
     --gridline: #2c2a26;
     --baseline: #3d3a34;
     --accent: #e08a55;
+    --dimension: #5fa8d8;
 
     --zone-1prime: #3987e5;
     --zone-1: #d95926;
@@ -61,6 +64,7 @@
   --gridline: #2c2a26;
   --baseline: #3d3a34;
   --accent: #e08a55;
+  --dimension: #5fa8d8;
 
   --zone-1prime: #3987e5;
   --zone-1: #d95926;
