@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import type { ABasis, RoofType } from '@zones/engine';
+import { isPlainNumber, parseFeet } from '../lib/feetInches';
 import type {
   FormState,
   MonoslopeHighSideChoice,
@@ -33,18 +34,20 @@ const LABEL_STYLE: CSSProperties = {
 
 const ROW_STYLE: CSSProperties = { marginBottom: 14 };
 
-function NumberField(props: {
-  label: string;
-  value: number;
-  min?: number;
-  step?: number;
-  onChange: (v: number) => void;
-}) {
+const FIELD_HINT_STYLE: CSSProperties = { fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 };
+
+/**
+ * A length, in feet. Takes it however it is written — 22.5, 22' 6", 22-6
+ * (see parseFeet) — and hands on decimal feet, the only unit the engine
+ * knows. The field keeps showing what was typed; when that is not already a
+ * plain number, the line under it says what it was read as.
+ */
+function NumberField(props: { label: string; value: number; onChange: (v: number) => void }) {
   // Kept as local text so the field can hold an intermediate state (empty,
-  // a bare "-", a trailing ".") while typing. Rounding every keystroke
-  // through the numeric `value` prop is what left a stuck leading zero
-  // behind when the field was cleared: value snapped to 0, the input
-  // re-rendered showing "0", and the next digit typed landed after it.
+  // a trailing "." or "'") while typing. Rounding every keystroke through
+  // the numeric `value` prop is what left a stuck leading zero behind when
+  // the field was cleared: value snapped to 0, the input re-rendered showing
+  // "0", and the next digit typed landed after it.
   const [text, setText] = useState(String(props.value));
   const lastEmitted = useRef(props.value);
   // Ties the label to the field, so touching the label focuses it — on a
@@ -60,12 +63,15 @@ function NumberField(props: {
 
   const handleChange = (raw: string) => {
     setText(raw);
-    const parsed = Number(raw);
-    if (raw.trim() !== '' && !Number.isNaN(parsed)) {
+    const parsed = parseFeet(raw);
+    if (parsed !== null) {
       lastEmitted.current = parsed;
       props.onChange(parsed);
     }
   };
+
+  const parsed = parseFeet(text);
+  const unreadable = text.trim() !== '' && parsed === null;
 
   return (
     <div style={ROW_STYLE}>
@@ -74,20 +80,27 @@ function NumberField(props: {
       </label>
       <input
         id={id}
-        type="number"
-        // Brings up the numeric keypad with a decimal point on a phone.
+        // Text, not number: a number field refuses the marks and the dash.
+        type="text"
+        // Still the numeric keypad on a phone, where most entries are plain
+        // numbers; a keyboard with ' and " is one key away for the rest.
         inputMode="decimal"
-        style={FIELD_STYLE}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={unreadable}
+        style={{ ...FIELD_STYLE, borderColor: unreadable ? 'var(--zone-1)' : undefined }}
         value={text}
-        min={props.min ?? 0}
-        step={props.step ?? 1}
         onChange={(e) => handleChange(e.target.value)}
         onBlur={() => {
-          if (text.trim() === '' || Number.isNaN(Number(text))) {
-            setText(String(props.value));
-          }
+          if (parsed === null) setText(String(props.value));
         }}
       />
+      {parsed !== null && !isPlainNumber(text) && <div style={FIELD_HINT_STYLE}>= {round2(parsed)} ft</div>}
+      {unreadable && (
+        <div style={{ ...FIELD_HINT_STYLE, color: 'var(--zone-1)' }}>
+          Not a length yet — try 22.5, 22&apos; 6&quot; or 22-6
+        </div>
+      )}
     </div>
   );
 }
@@ -203,8 +216,9 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
         Building — {stepped ? 'Stepped (two sections)' : 'Rectangle'}
       </h2>
       <div style={ROW_STYLE}>
-        <label style={LABEL_STYLE}>Project name</label>
+        <label style={LABEL_STYLE} htmlFor="field-project-name">Project name</label>
         <input
+id="field-project-name"
           type="text"
           style={FIELD_STYLE}
           value={form.projectName}
@@ -230,14 +244,18 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
         </label>
       </div>
 
-      <NumberField label="Length L (ft)" value={form.length} min={1} onChange={(v) => set('length', v)} />
-      <NumberField label="Width B (ft)" value={form.width} min={1} onChange={(v) => set('width', v)} />
-      <NumberField label="Height (ft)" value={form.eaveHeight} min={0.1} onChange={(v) => set('eaveHeight', v)} />
+      <div style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '-6px 0 10px' }}>
+        Lengths take feet and inches as well as decimals: 22.5, 22&apos; 6&quot; or 22-6.
+      </div>
+      <NumberField label="Length L (ft)" value={form.length} onChange={(v) => set('length', v)} />
+      <NumberField label="Width B (ft)" value={form.width} onChange={(v) => set('width', v)} />
+      <NumberField label="Height (ft)" value={form.eaveHeight} onChange={(v) => set('eaveHeight', v)} />
 
       {!stepped && (
         <div style={ROW_STYLE}>
-          <label style={LABEL_STYLE}>Roof type</label>
+          <label style={LABEL_STYLE} htmlFor="field-roof-type">Roof type</label>
           <select
+id="field-roof-type"
             style={FIELD_STYLE}
             value={form.roofType}
             onChange={(e) => set('roofType', e.target.value as RoofType)}
@@ -253,8 +271,9 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
       {stepped && (
         <>
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE}>Attaches to wall</label>
+            <label style={LABEL_STYLE} htmlFor="field-attaches-to-wall">Attaches to wall</label>
             <select
+id="field-attaches-to-wall"
               style={FIELD_STYLE}
               value={form.stepEdge}
               onChange={(e) => set('stepEdge', e.target.value as StepEdgeChoice)}
@@ -268,37 +287,31 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
           <NumberField
             label={`Section 2 — along shared wall (ft, max ${round2(sharedWallLength)})`}
             value={form.stepSpan}
-            min={1}
             onChange={(v) => set('stepSpan', v)}
           />
           <NumberField
             label="Section 2 — offset along that wall (ft)"
             value={form.stepOffset}
-            min={0}
             onChange={(v) => set('stepOffset', v)}
           />
           <NumberField
             label="Section 2 — depth out from the wall (ft)"
             value={form.stepDepth}
-            min={1}
             onChange={(v) => set('stepDepth', v)}
           />
           <NumberField
             label="Section 2 — height (ft)"
             value={form.stepEaveHeight}
-            min={0.1}
             onChange={(v) => set('stepEaveHeight', v)}
           />
           <NumberField
             label="Parapet height — section 1 (ft)"
             value={form.parapetHeight}
-            min={0}
             onChange={(v) => set('parapetHeight', v)}
           />
           <NumberField
             label="Parapet height — section 2 (ft)"
             value={form.stepParapetHeight}
-            min={0}
             onChange={(v) => set('stepParapetHeight', v)}
           />
           <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
@@ -321,8 +334,9 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
         <>
           <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE}>Ridge orientation</label>
+            <label style={LABEL_STYLE} htmlFor="field-ridge-orientation">Ridge orientation</label>
             <select
+id="field-ridge-orientation"
               style={FIELD_STYLE}
               value={form.ridgeAlong}
               onChange={(e) => set('ridgeAlong', e.target.value as RidgeAxisChoice)}
@@ -345,8 +359,9 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
         <>
           <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE}>High side</label>
+            <label style={LABEL_STYLE} htmlFor="field-high-side">High side</label>
             <select
+id="field-high-side"
               style={FIELD_STYLE}
               value={form.monoslopeHighSide}
               onChange={(e) => set('monoslopeHighSide', e.target.value as MonoslopeHighSideChoice)}
@@ -368,8 +383,8 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
 
       {isFlat && (
         <>
-          <NumberField label="Parapet height (ft)" value={form.parapetHeight} min={0} onChange={(v) => set('parapetHeight', v)} />
-          <NumberField label="Overhang depth (ft)" value={form.overhangDepth} min={0} onChange={(v) => set('overhangDepth', v)} />
+          <NumberField label="Parapet height (ft)" value={form.parapetHeight} onChange={(v) => set('parapetHeight', v)} />
+          <NumberField label="Overhang depth (ft)" value={form.overhangDepth} onChange={(v) => set('overhangDepth', v)} />
         </>
       )}
 

@@ -369,3 +369,18 @@ The app was a fixed three-column grid (280 px, the view, 260 px) at every width,
 - **Smaller things:** fields are 16 px on a phone (Safari zooms the page into anything smaller), number fields ask for the decimal keypad and their labels are tied to them, and the app fills the visible viewport (`100dvh`) rather than the one behind the browser's toolbars.
 
 Checked in headless Chromium at 375 × 812, 820 × 1180 and 1400 × 850. Not checked on a physical phone.
+
+### 10.12 Update — 2026-10-11: A building can be kept, sent, and typed in feet and inches
+
+Until now a reload lost everything that had been entered, and a length could only be a decimal.
+
+- **`project.ts` — what a project is.** The inputs (`FormState`) and the board size, and nothing derived: zones are recomputed on open, so a saved project cannot disagree with the engine that opens it. Three things bring one in from outside — a file, a link, the browser's autosave — and all three go through `checkProject`, the same rule the zbCAD repo's own tools follow. A missing field takes its default (older files and shorter links keep working), an unknown one is ignored (newer ones do too), and a field that is present but wrong refuses the whole project and names the field, rather than opening a building with one dimension quietly changed. **A new `FormState` field is covered automatically; a new choice field needs its allowed values added to `CHOICES`.**
+- **Autosave.** The building is written to `localStorage` (`zones.autosave`) as it is typed and restored on load.
+- **Save / Open.** A `.zones.json` file, named after the project.
+- **Copy link.** The building travels in the URL's fragment as plain `field=value` pairs, listing only what differs from the default, e.g. `#length=150.5&eaveHeight=22.5&roofType=gable`. The fragment rather than the query string because a browser never sends it to the server: dimensions and the project name stay out of request logs and the page-view analytics. A followed link is opened, then taken off the address, so it cannot go stale and reopen over later edits.
+- **Feet and inches.** `feetInches.ts` reads `22.5`, `22' 6"`, `22'-6 1/2"`, `22-6`, `6"` and the like into decimal feet — still the only unit past the form (§3.1). The field keeps what was typed and says underneath what it was read as. Output is still decimal feet everywhere.
+
+**Judgment calls:**
+
+- *A followed link replaces the autosave.* Whoever follows a link meant to see that building, and it becomes the open one, so the building that was here before is gone unless it was saved to a file. With one building of a dozen numbers this seemed better than a prompt on every shared link.
+- *The numeric keypad stays on phones.* Most entries are plain numbers and the decimal keypad is the fastest way to type them, but iOS's has no `'`, `"`, dash or space, so feet-and-inches entry on an iPhone means decimals. A full keyboard would reverse the trade.
