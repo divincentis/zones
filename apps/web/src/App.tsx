@@ -75,18 +75,22 @@ export function App() {
               {mode.toUpperCase()}
             </button>
           ))}
-          {outcome.ok && view === '3d' && (
+          {outcome.ok && (
             <button
-              onClick={() => canvasEl && exportZonePdf(canvasEl, outcome.result, form, boardSize ?? undefined)}
-              disabled={!canvasEl}
+              // From the 3D view the PDF leads with that view as framed; from
+              // the plan there is no framed view, so it leads with the plan.
+              onClick={() =>
+                exportZonePdf(view === '3d' ? canvasEl : null, outcome.result, form, boardSize ?? undefined, APP_VERSION)
+              }
+              disabled={view === '3d' && !canvasEl}
               style={{
                 padding: '6px 12px',
                 borderRadius: 4,
                 border: '1px solid var(--border)',
                 background: 'var(--surface-1)',
                 color: 'var(--text-primary)',
-                cursor: canvasEl ? 'pointer' : 'default',
-                opacity: canvasEl ? 1 : 0.5,
+                cursor: view === '2d' || canvasEl ? 'pointer' : 'default',
+                opacity: view === '2d' || canvasEl ? 1 : 0.5,
               }}
             >
               Export PDF
