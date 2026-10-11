@@ -6,6 +6,7 @@ import {
   type RidgeAxisChoice,
   type StepEdgeChoice,
 } from './buildModel';
+import { DEFAULT_LENGTH_UNITS, type LengthUnits } from './lengthFormat';
 
 /**
  * A project: everything the user has entered, and nothing derived from it.
@@ -22,9 +23,11 @@ export interface Project {
   form: FormState;
   /** Board width (ft) that roof bands are rounded up to for takeoff; null when off. */
   boardSize: number | null;
+  /** How lengths are written out. Kept with the building because the PDF and a shared link should read the same way to whoever opens them. */
+  units: LengthUnits;
 }
 
-export const DEFAULT_PROJECT: Project = { form: DEFAULT_FORM_STATE, boardSize: null };
+export const DEFAULT_PROJECT: Project = { form: DEFAULT_FORM_STATE, boardSize: null, units: DEFAULT_LENGTH_UNITS };
 
 /** Marks a file as one of ours, so opening somebody's package.json says so plainly. */
 const FILE_APP = 'zbcad-wind-zones';
@@ -101,7 +104,15 @@ export function checkProject(raw: unknown): ProjectCheck {
     boardSize = rawBoard;
   }
 
-  return { ok: true, project: { form: form as unknown as FormState, boardSize } };
+  const rawUnits = raw.units;
+  if (rawUnits !== undefined && rawUnits !== 'feetInches' && rawUnits !== 'decimal') {
+    return { ok: false, error: 'units is not feetInches or decimal' };
+  }
+
+  return {
+    ok: true,
+    project: { form: form as unknown as FormState, boardSize, units: rawUnits ?? DEFAULT_LENGTH_UNITS },
+  };
 }
 
 // --- files and the autosave: the whole project, as JSON ----------------------
@@ -148,6 +159,7 @@ export function projectToFragment(project: Project): string {
     if (project.form[key] !== DEFAULT_FORM_STATE[key]) params.set(key, String(project.form[key]));
   }
   if (project.boardSize !== null) params.set('boardSize', String(project.boardSize));
+  if (project.units !== DEFAULT_LENGTH_UNITS) params.set('units', project.units);
   return params.toString();
 }
 
@@ -170,6 +182,7 @@ export function projectFromFragment(fragment: string): ProjectCheck | null {
     else form[key] = text;
   }
   const board = params.get('boardSize');
-  if (Object.keys(form).length === 0 && board === null) return null;
-  return checkProject({ form, boardSize: board === null ? null : Number(board) });
+  const units = params.get('units');
+  if (Object.keys(form).length === 0 && board === null && units === null) return null;
+  return checkProject({ form, boardSize: board === null ? null : Number(board), units: units ?? undefined });
 }

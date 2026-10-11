@@ -384,3 +384,30 @@ Until now a reload lost everything that had been entered, and a length could onl
 
 - *A followed link replaces the autosave.* Whoever follows a link meant to see that building, and it becomes the open one, so the building that was here before is gone unless it was saved to a file. With one building of a dozen numbers this seemed better than a prompt on every shared link.
 - *The numeric keypad stays on phones.* Most entries are plain numbers and the decimal keypad is the fastest way to type them, but iOS's has no `'`, `"`, dash or space, so feet-and-inches entry on an iPhone means decimals. A full keyboard would reverse the trade.
+
+### 10.13 Update — 2026-10-11: The panel and the form say what they mean; lengths in feet and inches
+
+A review of the interface found it reading in places as the engine's own notes rather than a finished tool. Two groups of that were taken on here.
+
+**Things that read as broken or internal**
+
+- **Failures are explained in the form's terms.** A steep hip roof used to show `computeSteepRoofZones: roofType "hip" is not yet supported (gable only)` and blank the zones panel. `explainFailure` in `buildModel.ts` now covers the cases a form can reach — a zero dimension, a hip over 7°, a monoslope over 30°, a pitch of 90° or more, a second section slid off its wall — each with what to change; anything unforeseen still gets the engine's reason, without the function name. The roof-type list says "Hip (7° or less only)".
+- **No references to documents the user cannot see.** The notes that pointed at this file are rewritten to say the thing itself, and set at 12 px.
+- **Plain names** (`terms.ts`). The limit that set `a` is "10% of the least plan dimension", not `0.1*Lmin`. Walls are the left, right, top and bottom wall *on the plan* rather than "High along Length @ B=width".
+- **The "corner-dimension basis" control is gone.** By its own description it changed nothing while every building is a rectangle. `aBasis` is still in the model, at its default, for the day footprints are not.
+
+**The zones panel**
+
+- **Wider and larger**: 320 px at 13 px, with the figures as a name and value side by side.
+- **A fixed place for the zone under the pointer**, so pointing at one no longer moves everything below it.
+- **Totals** for roof and wall area on every table, by the surface the area is on: a gable over 45° carries wall zones on its roof, and those count as roof.
+- **Copy table** puts the tables on the clipboard as tab-separated text for a spreadsheet.
+
+**Lengths in feet and inches** (`lengthFormat.ts`)
+
+- Every length shown — the 3D call-outs, the panel, the tables, the plan's dimension strings, the PDF — goes through one function, in the unit chosen in the form: feet and inches (the default) or decimal feet. The choice is kept with the project, so a link or a PDF reads the same way to whoever opens it.
+- **Feet and inches are given to the whole inch, rounded up**, at the user's request: 13.2 ft is 13′-3″. Every figure here is a boundary set out from an edge or a size to be covered, and the inch to err by is the one that makes it bigger. A figure already on a whole inch stays there (a tolerance keeps floating-point dust from turning 8 ft into 8′-1″).
+- A consequence worth knowing: the intervals of a dimension string are each rounded up, so they can add up to an inch or two more than the overall dimension beside them. The plan and the panel both say the lengths are rounded up.
+- Areas are unaffected: they are computed from the exact figures and shown in square feet.
+
+Not taken on from the same review: the load time (a blank page until a 1.6 MB script arrives), the 3D view's labels and grid, and the styling of Export PDF.

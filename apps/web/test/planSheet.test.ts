@@ -74,7 +74,7 @@ describe('plan geometry — the default flat roof', () => {
 });
 
 describe('plan sheet — print', () => {
-  const sheet = buildPlanSheet(zonesFor(), { mode: 'print', tables: computeZoneTables(zonesFor()) });
+  const sheet = buildPlanSheet(zonesFor(), { mode: 'print', units: 'decimal', tables: computeZoneTables(zonesFor(), undefined, 'decimal') });
 
   it('is a landscape letter page at a standard scale', () => {
     expect([sheet.width, sheet.height]).toEqual([792, 612]);
@@ -121,7 +121,7 @@ describe('plan sheet — every kind of building', () => {
   for (const [name, overrides] of Object.entries(BUILDINGS)) {
     for (const mode of ['print', 'screen'] as const) {
       it(`${name} (${mode}): everything lands on the page`, () => {
-        const sheet = buildPlanSheet(zonesFor(overrides), { mode, title: 'Test', subtitle: 'Sub', notice: 'Notice' });
+        const sheet = buildPlanSheet(zonesFor(overrides), { mode, units: 'decimal', title: 'Test', subtitle: 'Sub', notice: 'Notice' });
         for (const prim of sheet.prims) {
           const points: Array<[number, number]> =
             prim.kind === 'line'
@@ -144,7 +144,7 @@ describe('plan sheet — every kind of building', () => {
     }
 
     it(`${name}: no text needs a glyph the PDF font lacks`, () => {
-      const sheet = buildPlanSheet(zonesFor(overrides), { mode: 'print' });
+      const sheet = buildPlanSheet(zonesFor(overrides), { mode: 'print', units: 'decimal' });
       for (const prim of sheet.prims) {
         if (prim.kind === 'text') expect(pdfSafe(prim.text)).toMatch(/^[\x20-\x7E -ÿ—]*$/);
       }
@@ -154,11 +154,11 @@ describe('plan sheet — every kind of building', () => {
 
 describe('plan sheet — what each roof type adds', () => {
   const lines = (overrides: Parameters<typeof zonesFor>[0]) =>
-    buildPlanSheet(zonesFor(overrides), { mode: 'print' }).prims.filter(
+    buildPlanSheet(zonesFor(overrides), { mode: 'print', units: 'decimal' }).prims.filter(
       (p): p is Extract<PlanPrim, { kind: 'line' }> => p.kind === 'line'
     );
   const arrowheads = (overrides: Parameters<typeof zonesFor>[0]) =>
-    buildPlanSheet(zonesFor(overrides), { mode: 'print' }).prims.filter((p) => p.kind === 'poly');
+    buildPlanSheet(zonesFor(overrides), { mode: 'print', units: 'decimal' }).prims.filter((p) => p.kind === 'poly');
 
   it('a flat roof has no ridge, no arrows, no dashed wall line', () => {
     expect(lines({}).some((l) => l.dash)).toBe(false);
@@ -172,7 +172,7 @@ describe('plan sheet — what each roof type adds', () => {
 
   it('a monoslope has one arrow, pointing away from the high side', () => {
     // High side is the wall at x = 0, so the arrow runs left to right.
-    const sheet = buildPlanSheet(zonesFor(BUILDINGS.monoslope20!), { mode: 'print' });
+    const sheet = buildPlanSheet(zonesFor(BUILDINGS.monoslope20!), { mode: 'print', units: 'decimal' });
     const heads = sheet.prims.filter((p): p is Extract<PlanPrim, { kind: 'poly' }> => p.kind === 'poly');
     expect(heads).toHaveLength(1);
     const [tip, ...base] = heads[0]!.points;
@@ -196,7 +196,7 @@ describe('plan sheet — what each roof type adds', () => {
   it('a stepped building dimensions each roof level on its own string', () => {
     // Lower 120 x 80 at 22 ft (0.6h = 13.2); upper 70 x 50 at 40 ft against
     // its right-hand wall (0.6h = 24, 0.2h = 8).
-    const sheet = buildPlanSheet(zonesFor(BUILDINGS.steppedSeparate!), { mode: 'print' });
+    const sheet = buildPlanSheet(zonesFor(BUILDINGS.steppedSeparate!), { mode: 'print', units: 'decimal' });
     expect(sheet.chains.y).toHaveLength(2);
     const [lower, upper] = sheet.chains.y;
     expect(lower!.elevation).toBe(22);
@@ -211,14 +211,14 @@ describe('plan sheet — what each roof type adds', () => {
   });
 
   it('puts the upper level\'s string on the left when that is the side it is on', () => {
-    const sheet = buildPlanSheet(zonesFor({ stepEnabled: true, stepEdge: 'widthNear' }), { mode: 'print' });
+    const sheet = buildPlanSheet(zonesFor({ stepEnabled: true, stepEdge: 'widthNear' }), { mode: 'print', units: 'decimal' });
     const [lower, upper] = sheet.chains.y;
     expect([lower!.far, upper!.far]).toEqual([true, false]);
   });
 
   it('a gable\'s ridge band is numbered beside the ridge, not on it', () => {
     const result = zonesFor(BUILDINGS.gable60!);
-    const sheet = buildPlanSheet(result, { mode: 'print' });
+    const sheet = buildPlanSheet(result, { mode: 'print', units: 'decimal' });
     const ridgeY = sheet.toSheet(0, 40)[1];
     const numbers = sheet.prims.filter(
       (p): p is Extract<PlanPrim, { kind: 'text' }> => p.kind === 'text' && p.role === 'onZone' && !!p.bold
@@ -231,7 +231,7 @@ describe('plan sheet — what each roof type adds', () => {
     // The rake band sits above another piece on the gable end; it is wall
     // area but not a stretch of wall, and the plan shows stretches.
     const result = zonesFor(BUILDINGS.gable60!);
-    const sheet = buildPlanSheet(result, { mode: 'print' });
+    const sheet = buildPlanSheet(result, { mode: 'print', units: 'decimal' });
     const bars = sheet.prims.filter((p) => p.kind === 'zone' && p.hover?.source === 'wall');
     expect(bars).toHaveLength(result.walls.pieces.filter((p) => p.heightMin === 0).length);
     expect(bars.length).toBeLessThan(result.walls.pieces.length);
@@ -240,8 +240,8 @@ describe('plan sheet — what each roof type adds', () => {
 
 describe('plan sheet — screen', () => {
   it('lays the plan out for the space it is given, tall or wide', () => {
-    const tall = buildPlanSheet(zonesFor(), { mode: 'screen', page: { width: 320, height: 600 } });
-    const wide = buildPlanSheet(zonesFor(), { mode: 'screen', page: { width: 900, height: 400 } });
+    const tall = buildPlanSheet(zonesFor(), { mode: 'screen', units: 'decimal', page: { width: 320, height: 600 } });
+    const wide = buildPlanSheet(zonesFor(), { mode: 'screen', units: 'decimal', page: { width: 900, height: 400 } });
     expect([tall.width, tall.height]).toEqual([320, 600]);
     expect(tall.feetPerInch).toBeUndefined();
     // Not held to a standard scale, so more room is a bigger plan.
@@ -249,7 +249,7 @@ describe('plan sheet — screen', () => {
   });
 
   it('has no title block or tables — the app\'s panels carry those', () => {
-    const sheet = buildPlanSheet(zonesFor(), { mode: 'screen', title: 'Ignored', tables: [] });
+    const sheet = buildPlanSheet(zonesFor(), { mode: 'screen', units: 'decimal', title: 'Ignored', tables: [] });
     expect(sheet.prims.some((p) => p.kind === 'text' && p.text === 'Ignored')).toBe(false);
   });
 });
@@ -283,7 +283,7 @@ describe('dimension labels', () => {
   });
 
   it('gives a zone one label size, whichever way each of its regions lies', () => {
-    const sheet = buildPlanSheet(zonesFor(), { mode: 'print', tables: computeZoneTables(zonesFor()) });
+    const sheet = buildPlanSheet(zonesFor(), { mode: 'print', units: 'decimal', tables: computeZoneTables(zonesFor(), undefined, 'decimal') });
     const corners = sheet.prims.filter(
       (p): p is Extract<PlanPrim, { kind: 'text' }> => p.kind === 'text' && p.role === 'onZone' && p.text === '3'
     );
@@ -291,7 +291,7 @@ describe('dimension labels', () => {
   });
 
   it('on a roof too big for its corner legs to be read, still places what it can', () => {
-    const sheet = buildPlanSheet(zonesFor(BUILDINGS.huge!), { mode: 'print' });
+    const sheet = buildPlanSheet(zonesFor(BUILDINGS.huge!), { mode: 'print', units: 'decimal' });
     expect(sheet.feetPerInch).toBeGreaterThanOrEqual(100);
     expect(sheet.chains.x[0]!.labels.filter((l) => l !== null).length).toBeGreaterThanOrEqual(5);
   });

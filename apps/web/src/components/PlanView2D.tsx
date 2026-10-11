@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zoneSurfaceArea, type ComputationResult } from '../lib/buildModel';
 import { describeRoofHover, describeWallHover, type HoverInfo } from '../lib/hoverInfo';
+import type { LengthUnits } from '../lib/lengthFormat';
 import { buildPlanSheet, type PlanPrim, type PlanRole } from '../lib/planSheet';
 import { useZoneColors } from '../lib/zoneColors';
 
@@ -8,6 +9,7 @@ interface Props {
   result: ComputationResult;
   onHover: (info: HoverInfo | null) => void;
   hovered: HoverInfo | null;
+  units: LengthUnits;
 }
 
 /**
@@ -39,7 +41,7 @@ const pointList = (points: Array<[number, number]>) => points.map((p) => `${p[0]
  * the dimension strings, the wall bars — is decided in buildPlanSheet; this
  * only paints it and wires up hover.
  */
-export function PlanView2D({ result, onHover, hovered }: Props) {
+export function PlanView2D({ result, onHover, hovered, units }: Props) {
   const colors = useZoneColors();
   // The sheet is laid out for the space it actually has, so the plan fills a
   // tall pane as well as a wide one and the lettering never scales with it.
@@ -58,22 +60,24 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
     () =>
       buildPlanSheet(result, {
         mode: 'screen',
+        units,
         page: frame
           ? { width: frame.width / PIXELS_PER_POINT, height: frame.height / PIXELS_PER_POINT }
           : undefined,
       }),
-    [result, frame]
+    [result, frame, units]
   );
 
   const hoverFor = (prim: Extract<PlanPrim, { kind: 'zone' }>): HoverInfo | null => {
     if (!prim.hover) return null;
     const area = zoneSurfaceArea(result, prim.zoneId);
-    if (prim.hover.source === 'roof') return describeRoofHover(prim.zoneId, area, result.roof);
+    if (prim.hover.source === 'roof') return describeRoofHover(prim.zoneId, area, result.roof, units);
     const upper = prim.hover.section === 1 && result.step;
     return describeWallHover(
       prim.zoneId,
       area,
       upper ? upper.upperWalls : result.walls,
+      units,
       result.step ? (upper ? 'upper section' : 'lower section') : undefined
     );
   };

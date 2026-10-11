@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Html } from '@react-three/drei';
@@ -37,6 +37,7 @@ import { DimensionLine } from './Dimension3D';
 import { LabelCollisionProvider, useCollidableLabelRef } from './LabelCollision';
 import { steppedSections, type PlanRect } from '../lib/steppedSections';
 import { fmt, fmtDoubledWidth, fmtWidth, roundUpToBoard } from '../lib/zoneDimensions';
+import { DEFAULT_LENGTH_UNITS, formatLength, type LengthUnits } from '../lib/lengthFormat';
 
 interface Props {
   result: ComputationResult;
@@ -45,7 +46,16 @@ interface Props {
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
   /** Board width (ft) to round zone-width call-outs up to, mirroring the "Zone areas" table. null/undefined = off. */
   boardSize?: number | null;
+  units: LengthUnits;
 }
+
+/**
+ * How the call-outs write a length. A context rather than a prop on each of
+ * them because it is one setting for the whole scene, and provided inside
+ * the Canvas because react-three-fiber's tree does not see contexts from
+ * outside it.
+ */
+const LengthUnitsContext = createContext<LengthUnits>(DEFAULT_LENGTH_UNITS);
 
 type Quad = [Vec3, Vec3, Vec3, Vec3];
 
@@ -191,6 +201,7 @@ function RoofDimensions({
   facing: Facing;
   boardSize?: number | null;
 }) {
+  const units = useContext(LengthUnitsContext);
   const { building, roof } = result;
   if (isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) || isSteppedRoofResult(roof)) return null;
   const roofXs = roof.pieces.flatMap((p) => p.vertices.map((v) => v[0]));
@@ -298,7 +309,7 @@ function RoofDimensions({
           <DimensionLine
             from={at(nearX, nearY + (dirY * legW) / 2)}
             to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-            label={`Zone 3 leg W = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
+            label={`Zone 3 leg W = ${fmtWidth(legWExact, boardSize ?? undefined, units)}`}
             color={AMBER}
             priority={DIM_PRIORITY.zone3}
             retreat
@@ -306,7 +317,7 @@ function RoofDimensions({
           <DimensionLine
             from={at(nearX, nearY - dirY * legLenOutset)}
             to={at(nearX + dirX * legLenX, nearY - dirY * legLenOutset)}
-            label={`Zone 3 leg L = ${fmtWidth(legLenXExact, boardSize ?? undefined)}`}
+            label={`Zone 3 leg L = ${fmtWidth(legLenXExact, boardSize ?? undefined, units)}`}
             color={AMBER}
             priority={DIM_PRIORITY.zone3}
             retreat
@@ -317,7 +328,7 @@ function RoofDimensions({
         <DimensionLine
           from={at(bandX, nearY)}
           to={at(bandX, nearY + dirY * dEdgeY)}
-          label={`Zone 2 = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
+          label={`Zone 2 = ${fmtWidth(dEdgeYExact, boardSize ?? undefined, units)}`}
           color={AMBER}
           priority={DIM_PRIORITY.zone2}
           retreat
@@ -332,7 +343,7 @@ function RoofDimensions({
             <DimensionLine
               from={at(bandX, nearY + dirY * dEdgeY)}
               to={at(bandX, nearY + dirY * dIntY)}
-              label={`Zone 1 = ${fmt(zone1BandWidth)}`}
+              label={`Zone 1 = ${fmt(zone1BandWidth, units)}`}
               color={BLUE}
               priority={DIM_PRIORITY.zone1}
               retreat
@@ -340,7 +351,7 @@ function RoofDimensions({
             <DimensionLine
               from={at(interiorX, zone1PrimeMinY)}
               to={at(interiorX, zone1PrimeMaxY)}
-              label={`Zone 1' W = ${fmt(zone1PrimeWidth)}`}
+              label={`Zone 1' W = ${fmt(zone1PrimeWidth, units)}`}
               color={BLUE}
               priority={DIM_PRIORITY.zone1Prime}
               retreat
@@ -348,7 +359,7 @@ function RoofDimensions({
             <DimensionLine
               from={at(roofMinX + dIntX, lengthRowY)}
               to={at(roofMaxX - dIntX, lengthRowY)}
-              label={`Zone 1' L = ${fmt(zone1PrimeLength)}`}
+              label={`Zone 1' L = ${fmt(zone1PrimeLength, units)}`}
               color={BLUE}
               priority={DIM_PRIORITY.zone1Prime}
               retreat
@@ -358,7 +369,7 @@ function RoofDimensions({
           <DimensionLine
             from={at(interiorX, roofMinY + dEdgeY)}
             to={at(interiorX, roofMaxY - dEdgeY)}
-            label={`Zone 1 = ${fmt(zone1Width)}`}
+            label={`Zone 1 = ${fmt(zone1Width, units)}`}
             color={BLUE}
             priority={DIM_PRIORITY.zone1}
             retreat
@@ -380,6 +391,7 @@ function SteepRoofDimensions({
   facing: Facing;
   boardSize?: number | null;
 }) {
+  const units = useContext(LengthUnitsContext);
   const { building, roof } = result;
   if (!isSteepRoofResult(roof) || !building.roof.ridgeLine) return null;
   const { frame, ridgeAxis, perpExtent } = resolveRidgeGeometry(building);
@@ -441,7 +453,7 @@ function SteepRoofDimensions({
       <DimensionLine
         from={at(0, gap)}
         to={at(rakeBand, gap)}
-        label={`${asWall ? 'Zone 5' : 'Zone 2/3'} (rake) = ${fmtWidth(roof.rakeBand, boards)}`}
+        label={`${asWall ? 'Zone 5' : 'Zone 2/3'} (rake) = ${fmtWidth(roof.rakeBand, boards, units)}`}
         color={AMBER}
       />
       {asWall ? (
@@ -450,21 +462,21 @@ function SteepRoofDimensions({
         <DimensionLine
           from={planToWorld(toWorld(0, ridgeCenter), peakHeight)}
           to={planToWorld(toWorld(0, ridgeCenter), peakHeight - (roof.ridgeBandDrop ?? 0))}
-          label={`Zone 5 (peak) = ${fmt(roof.ridgeBandDrop ?? 0)}`}
+          label={`Zone 5 (peak) = ${fmt(roof.ridgeBandDrop ?? 0, units)}`}
           color={BLUE}
         />
       ) : roof.pitchBand === '7-27' ? (
         <DimensionLine
           from={at(gap2, ridgeCenter - ridgeOrEaveBand)}
           to={at(gap2, ridgeCenter + ridgeOrEaveBand)}
-          label={`Zone 3 (ridge) = ${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
+          label={`Zone 3 (ridge) = ${fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize ?? undefined, units)}`}
           color={BLUE}
         />
       ) : (
         <DimensionLine
           from={at(gap2, 0)}
           to={at(gap2, ridgeOrEaveBand)}
-          label={`Zone 3 (eave) = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined)}`}
+          label={`Zone 3 (eave) = ${fmtWidth(roof.ridgeOrEaveBand, boardSize ?? undefined, units)}`}
           color={BLUE}
         />
       )}
@@ -484,6 +496,7 @@ function MonoslopeRoofDimensions({
   facing: Facing;
   boardSize?: number | null;
 }) {
+  const units = useContext(LengthUnitsContext);
   const { building, roof } = result;
   if (!isMonoslopeRoofResult(roof) || !building.roof.highEdge) return null;
   const { frame, slopeAxis, highSide } = resolveMonoslopeGeometry(building);
@@ -530,13 +543,13 @@ function MonoslopeRoofDimensions({
       <DimensionLine
         from={at(gap, 0)}
         to={at(gap, highCornerBand)}
-        label={`Zone 3 (high corner) = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined)}`}
+        label={`Zone 3 (high corner) = ${fmtWidth(roof.highCornerBand, boardSize ?? undefined, units)}`}
         color={AMBER}
       />
       <DimensionLine
         from={at(0, depthRow)}
         to={at(highBand, depthRow)}
-        label={`Zone 2/3 (high side) = ${fmtWidth(roof.highBand, boardSize ?? undefined)}`}
+        label={`Zone 2/3 (high side) = ${fmtWidth(roof.highBand, boardSize ?? undefined, units)}`}
         color={BLUE}
       />
       {/* Drawn at mid-edge (not near the corner) so it can't overlap the
@@ -545,14 +558,14 @@ function MonoslopeRoofDimensions({
       <DimensionLine
         from={at(slopeExtent - lowBand, ridgeParallelExtent / 2)}
         to={at(slopeExtent, ridgeParallelExtent / 2)}
-        label={`Zone 2 (low side) = ${fmtWidth(roof.lowBand, boardSize ?? undefined)}`}
+        label={`Zone 2 (low side) = ${fmtWidth(roof.lowBand, boardSize ?? undefined, units)}`}
         color={AMBER}
       />
       {lowCornerBand > 1e-6 && (
         <DimensionLine
           from={at(slopeExtent - lowCornerBand, lowGap)}
           to={at(slopeExtent, lowGap)}
-          label={`Zone 3 (low corner, sq.) = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined)}`}
+          label={`Zone 3 (low corner, sq.) = ${fmtWidth(roof.lowCornerBand, boardSize ?? undefined, units)}`}
           color={BLUE}
         />
       )}
@@ -585,6 +598,7 @@ function SteppedRoofDimensions({
   facing: Facing;
   boardSize?: number | null;
 }) {
+  const units = useContext(LengthUnitsContext);
   const { roof, step } = result;
   if (!isSteppedRoofResult(roof) || !step) return null;
 
@@ -658,7 +672,7 @@ function SteppedRoofDimensions({
             <DimensionLine
               from={at(bandX, nearY)}
               to={at(bandX, nearY + dirY * dEdgeY)}
-              label={`Zone 2 (${role}) = ${fmtWidth(dEdgeYExact, boardSize ?? undefined)}`}
+              label={`Zone 2 (${role}) = ${fmtWidth(dEdgeYExact, boardSize ?? undefined, units)}`}
               color={AMBER}
               priority={DIM_PRIORITY.zone2}
               retreat
@@ -667,7 +681,7 @@ function SteppedRoofDimensions({
               <DimensionLine
                 from={at(nearX, nearY + (dirY * legW) / 2)}
                 to={at(nearX + dirX * legW, nearY + (dirY * legW) / 2)}
-                label={`Zone 3 leg W (${role}) = ${fmtWidth(legWExact, boardSize ?? undefined)}`}
+                label={`Zone 3 leg W (${role}) = ${fmtWidth(legWExact, boardSize ?? undefined, units)}`}
                 color={BLUE}
                 priority={DIM_PRIORITY.zone3}
                 retreat
@@ -677,7 +691,7 @@ function SteppedRoofDimensions({
               <DimensionLine
                 from={at(bandX, nearY + dirY * dEdgeY)}
                 to={at(bandX, nearY + dirY * dIntY)}
-                label={`Zone 1 (${role}) = ${fmt(zone1BandWidth)}`}
+                label={`Zone 1 (${role}) = ${fmt(zone1BandWidth, units)}`}
                 color={GREEN}
                 priority={DIM_PRIORITY.zone1}
                 retreat
@@ -687,7 +701,7 @@ function SteppedRoofDimensions({
               <DimensionLine
                 from={at(fieldColumn(zone1), zone1.y0)}
                 to={at(fieldColumn(zone1), zone1.y1)}
-                label={`Zone 1 (${role}) = ${fmt(zone1.width)}`}
+                label={`Zone 1 (${role}) = ${fmt(zone1.width, units)}`}
                 color={GREEN}
                 priority={DIM_PRIORITY.zone1}
                 retreat
@@ -698,7 +712,7 @@ function SteppedRoofDimensions({
                 <DimensionLine
                   from={at(fieldColumn(zone1Prime), zone1Prime.y0)}
                   to={at(fieldColumn(zone1Prime), zone1Prime.y1)}
-                  label={`Zone 1' W (${role}) = ${fmt(zone1Prime.width)}`}
+                  label={`Zone 1' W (${role}) = ${fmt(zone1Prime.width, units)}`}
                   color={GREEN}
                   priority={DIM_PRIORITY.zone1Prime}
                   retreat
@@ -706,7 +720,7 @@ function SteppedRoofDimensions({
                 <DimensionLine
                   from={at(zone1Prime.x0, fieldRow(zone1Prime))}
                   to={at(zone1Prime.x1, fieldRow(zone1Prime))}
-                  label={`Zone 1' L (${role}) = ${fmt(zone1Prime.length)}`}
+                  label={`Zone 1' L (${role}) = ${fmt(zone1Prime.length, units)}`}
                   color={GREEN}
                   priority={DIM_PRIORITY.zone1Prime}
                   retreat
@@ -721,7 +735,7 @@ function SteppedRoofDimensions({
         from={planToWorld([abutMidX, abutMidY], roof.lower.elevation)}
         to={planToWorld([abutMidX, abutMidY], roof.upper.elevation)}
         label={
-          `Step = ${roof.heightDifference.toFixed(1)} ft ` +
+          `Step = ${formatLength(roof.heightDifference, units)} ` +
           `(${roof.treatment === 'separate' ? `>= ${roof.threshold} ft: two roofs, Fig. 3.2.2b` : `< ${roof.threshold} ft: one roof, Fig. 3.2.2c`})`
         }
         color={RED}
@@ -794,6 +808,7 @@ function WallCornerDimensions({
   maxSpan: number;
   facing: Facing;
 }) {
+  const units = useContext(LengthUnitsContext);
   const vertices = building.vertices;
   const n = vertices.length;
 
@@ -869,7 +884,7 @@ function WallCornerDimensions({
                 color={RED}
               />
             )}
-            <CornerLabel position={at(labelPos)} color={RED} text={`a = ${walls.a.a.toFixed(2)} ft`} />
+            <CornerLabel position={at(labelPos)} color={RED} text={`a = ${formatLength(walls.a.a, units)}`} />
           </group>
         );
       })}
@@ -912,6 +927,7 @@ function CornerLabel({ position, color, text }: { position: Vec3; color: string;
  * the viewer instead of behind the building on the far side.
  */
 function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationResult; maxSpan: number; facing: Facing }) {
+  const units = useContext(LengthUnitsContext);
   const { building, step } = result;
   // For a stepped building these are the OVERALL extents across both
   // sections, not the primary rectangle's — labelled as such below, since
@@ -948,21 +964,21 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
       <DimensionLine
         from={at([minX, lineY])}
         to={at([maxX, lineY])}
-        label={`${step ? 'L overall' : 'L'} = ${length.toFixed(1)} ft`}
+        label={`${step ? 'L overall' : 'L'} = ${formatLength(length, units)}`}
         priority={DIM_PRIORITY.building}
         color={GREEN}
       />
       <DimensionLine
         from={at([lineX, minY])}
         to={at([lineX, maxY])}
-        label={`${step ? 'B overall' : 'B'} = ${width.toFixed(1)} ft`}
+        label={`${step ? 'B overall' : 'B'} = ${formatLength(width, units)}`}
         priority={DIM_PRIORITY.building}
         color={GREEN}
       />
       <DimensionLine
         from={at([cornerX, cornerY], 0)}
         to={at([cornerX, cornerY], building.eaveHeight)}
-        label={`${step ? 'Height (lower)' : 'Height'} = ${building.eaveHeight.toFixed(1)} ft`}
+        label={`${step ? 'Height (lower)' : 'Height'} = ${formatLength(building.eaveHeight, units)}`}
         priority={DIM_PRIORITY.building}
         color={GREEN}
       />
@@ -970,7 +986,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
         <DimensionLine
           from={at([cornerX - outset, cornerY], 0)}
           to={at([cornerX - outset, cornerY], step.upper.eaveHeight)}
-          label={`Height (upper) = ${step.upper.eaveHeight.toFixed(1)} ft`}
+          label={`Height (upper) = ${formatLength(step.upper.eaveHeight, units)}`}
           priority={DIM_PRIORITY.building}
           color={GREEN}
         />
@@ -979,7 +995,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   );
 }
 
-export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: Props) {
+export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, units }: Props) {
   const colors = useZoneColors();
   const { building, roof, walls, step } = result;
   const isSteep = isSteepRoofResult(roof);
@@ -1092,7 +1108,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
             color={colors[zoneId] ?? '#999'}
             hovered={isHovered}
             onHoverStart={() =>
-              onHover(describeRoofHover(zoneId, zoneSurfaceArea(result, zoneId), roof))
+              onHover(describeRoofHover(zoneId, zoneSurfaceArea(result, zoneId), roof, units))
             }
             onHoverEnd={() => onHover(null)}
           />
@@ -1128,6 +1144,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
                     zoneId,
                     zoneSurfaceArea(result, zoneId),
                     section.walls,
+                    units,
                     step ? (s === 0 ? 'lower section' : 'upper section') : undefined
                   )
                 )
@@ -1138,6 +1155,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
         })
       )}
 
+      <LengthUnitsContext.Provider value={units}>
       <LabelCollisionProvider>
         {isSteep ? (
           <SteepRoofDimensions result={result} maxSpan={maxSpan} facing={facing} boardSize={boardSize} />
@@ -1159,6 +1177,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
         )}
         <BuildingDimensions result={result} maxSpan={maxSpan} facing={facing} />
       </LabelCollisionProvider>
+      </LengthUnitsContext.Provider>
 
       <OrbitControls makeDefault target={center} />
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>

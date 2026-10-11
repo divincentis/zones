@@ -172,6 +172,85 @@ button {
   color: var(--zone-1);
 }
 
+/* The zones panel: what the view is showing, in figures. */
+.results {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.results-notice {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--zone-3);
+  color: #1a1300;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.results-hover {
+  /* Room for a heading and three lines of detail, the usual case. */
+  min-height: 92px;
+  margin-bottom: 14px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.results-hover[data-empty] {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+/* Name on the left, figure on the right; a long figure wraps in its own column. */
+.results-figures {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 5px 12px;
+  margin: 0 0 14px;
+}
+
+.results-figures dt {
+  color: var(--text-secondary);
+}
+
+.results-figures dd {
+  margin: 0;
+}
+
+.results-note {
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.results-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.results-actions button {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.results-actions button:hover,
+.results-actions button:focus-visible {
+  border-color: var(--accent);
+}
+
 /* ---- Layout ----------------------------------------------------------------
    Three panels: the building's inputs, the view, and the zones' figures.
 
@@ -185,7 +264,7 @@ button {
    so switching tabs does not throw away the 3D scene or where it was turned. */
 .app {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 260px;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
@@ -215,10 +294,26 @@ button {
 }
 
 .app-error {
-  max-width: 480px;
+  max-width: 520px;
   /* Clear of the view buttons, which sit over the top-left corner. */
-  padding: 56px 24px 24px;
-  color: var(--zone-1);
+  padding: 64px 24px 24px;
+  line-height: 1.5;
+}
+
+.app-error h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.app-error p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.app-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .app-tabs,
