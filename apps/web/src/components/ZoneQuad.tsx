@@ -11,7 +11,7 @@ interface Props {
   onHoverEnd: () => void;
 }
 
-/** A flat quad mesh from 4 world-space corners (roof pieces and wall panels are always rectangles). */
+/** A flat quad mesh from 4 world-space corners — roof pieces are rectangles on their roof plane, wall pieces vertical quads whose top (and sometimes base) follows the roof line. */
 export function ZoneQuad({ corners, color, hovered, onHoverStart, onHoverEnd }: Props) {
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();

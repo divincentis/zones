@@ -1,6 +1,7 @@
 import type { ABasis, FootprintNode } from './types.js';
 import { leastHorizontalDimension, localRectToWorld, rectFrame } from './geometry.js';
 import { meanRoofHeight } from './meanRoofHeight.js';
+import { heightRegime, type HeightRegimeResult } from './heightRegime.js';
 import { isDegenerateRect, rectArea, roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
@@ -10,9 +11,13 @@ import { isDegenerateRect, rectArea, roundUpToBoard, type ZonePiece } from './zo
  * This REPLACES the ASCE `a`-parameter-based offset approach originally
  * assumed in scope §4.2 for roof zones — FM 1-28 dimensions everything off
  * mean roof height `h` directly, and Zone 3 is L-shaped, not a square `a×a`
- * corner. `a` (see aParameter.ts) is retained for wall zones (§4.2), which
- * FM 1-28 does not cover in the source figures reviewed. See project
- * addendum in the scope doc for the decision record.
+ * corner. `a` (see aParameter.ts) is retained for wall zones (Fig. 3.2.2e).
+ * See project addendum in the scope doc for the decision record.
+ *
+ * Scoped by height as well as slope: §3.2.2 limits this figure to "h ≤ 60 ft
+ * (18 m), or h < 90 ft (27 m) and h/w ≤1.0". Taller buildings are Fig. 3.2.2f
+ * (tallRoofZones.ts) — see heightRegime.ts, which this function enforces
+ * rather than scaling 0.6h up a building the figure was never drawn for.
  *
  * All dimensions below are named exactly as they appear in Fig. 3.2.2a:
  *   Zone 2 width = 0.6h from roof edges
@@ -49,6 +54,8 @@ export interface LowSlopeRoofZoneResult {
   roofWidth: number; // plan dimension including overhang, along frame.v
   /** True if parapetHeight >= 3 ft — Zone 3 corners are credited to Zone 2 (Table 3.2.2a, note 2). */
   parapetCreditsCorners: boolean;
+  /** Always 'lowRise' here — carried so callers can report which clause of the height limit was met. */
+  regime: HeightRegimeResult;
   source: 'FM Global 1-28 Fig 3.2.2a';
 }
 
@@ -86,6 +93,14 @@ export function computeLowSlopeRoofZones(
     throw new Error(
       `computeLowSlopeRoofZones: pitch ${node.roof.pitchDegrees}° exceeds the 7° low-slope ` +
         `threshold (scope §4.2, Algorithm A). Use the pitched-roof algorithm (Phase 2) instead.`
+    );
+  }
+  const regime = heightRegime(node, aBasis);
+  if (regime.regime !== 'lowRise') {
+    throw new Error(
+      `computeLowSlopeRoofZones: h = ${regime.h.toFixed(1)} ft with lesser plan dimension ` +
+        `${regime.w.toFixed(1)} ft is outside Fig. 3.2.2a's limit (h ≤ 60 ft, or h < 90 ft with ` +
+        'h/w ≤ 1). Use computeTallRoofZones (Fig. 3.2.2f) instead.'
     );
   }
 
@@ -233,6 +248,7 @@ export function computeLowSlopeRoofZones(
     roofLength,
     roofWidth,
     parapetCreditsCorners,
+    regime,
     source: 'FM Global 1-28 Fig 3.2.2a',
   };
 }

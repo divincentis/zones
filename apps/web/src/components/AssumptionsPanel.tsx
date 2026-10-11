@@ -1,8 +1,11 @@
 import { Fragment, useState } from 'react';
 import {
+  heightRegimeReason,
   isMonoslopeRoofResult,
   isSteepRoofResult,
   isSteppedRoofResult,
+  isTallRoofResult,
+  pitchBandLabel,
   type ComputationResult,
   type FormState,
 } from '../lib/buildModel';
@@ -95,15 +98,16 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
             {roof.regions.map((region) => (
               <Fragment key={region.role}>
                 <dt>
-                  h ({region.role}), 0.6h
+                  h ({region.role}), {region.regime.regime === 'tall' ? 'a' : '0.6h'}
                 </dt>
                 <dd>
                   {region.h.toFixed(2)} ft, band {region.dEdge.toFixed(2)} ft
                 </dd>
                 <dt>Zone 1' ({region.role})</dt>
                 <dd>
-                  {region.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min{' '}
-                  {region.lMin.toFixed(1)} ft {'>'} 2.4h = {region.wideThreshold.toFixed(2)} ft)
+                  {region.regime.regime === 'tall'
+                    ? 'None — Fig. 3.2.2f has no Zone 1\''
+                    : `${region.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min ${region.lMin.toFixed(1)} ft > 2.4h = ${region.wideThreshold.toFixed(2)} ft)`}
                 </dd>
               </Fragment>
             ))}
@@ -125,16 +129,35 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
         ) : isSteepRoofResult(roof) ? (
           <>
             <dt>Pitch band</dt>
-            <dd>{roof.pitchBand}° ({roof.source})</dd>
+            <dd>{pitchBandLabel(roof.pitchBand)} ({roof.source})</dd>
             <dt>Rake band</dt>
             <dd>{roof.rakeBand.toFixed(2)} ft</dd>
-            <dt>{roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band</dt>
-            <dd>{roof.ridgeOrEaveBand.toFixed(2)} ft</dd>
+            <dt>{roof.pitchBand === '7-27' ? 'Ridge' : roof.pitchBand === '45+' ? 'Peak' : 'Eave'} band</dt>
+            <dd>
+              {roof.pitchBand === '45+'
+                ? `${(roof.ridgeBandDrop ?? 0).toFixed(2)} ft drop (${roof.ridgeOrEaveBand.toFixed(2)} ft in plan)`
+                : `${roof.ridgeOrEaveBand.toFixed(2)} ft`}
+            </dd>
+          </>
+        ) : isTallRoofResult(roof) ? (
+          <>
+            <dt>h (roof mean height)</dt>
+            <dd>{roof.regime.h.toFixed(2)} ft</dd>
+            <dt>Roof figure</dt>
+            <dd>Fig. 3.2.2f, tall building — {heightRegimeReason(roof.regime)}</dd>
+            <dt>a (roof zones)</dt>
+            <dd>
+              {roof.a.toFixed(2)} ft — {roof.aGoverningBranch}
+            </dd>
+            <dt>Zone 3 leg</dt>
+            <dd>2a = {roof.cornerLeg.toFixed(2)} ft long, a thick</dd>
           </>
         ) : (
           <>
             <dt>h (roof mean height)</dt>
             <dd>{roof.h.toFixed(2)} ft</dd>
+            <dt>Roof figure</dt>
+            <dd>Fig. 3.2.2a — {heightRegimeReason(roof.regime)}</dd>
             <dt>Zone 1' threshold</dt>
             <dd>
               {roof.hasZone1Prime ? 'Applies' : 'Does not apply'} (L_min {'>'} 2.4h ={' '}
@@ -161,6 +184,19 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
               taller section's exposed corner.{' '}
             </>
           )}
+          {roof.regions.some((r) => r.regime.regime === 'tall') && (
+            <>
+              {roof.regions
+                .filter((r) => r.regime.regime === 'tall')
+                .map((r) => `The ${r.role} roof`)
+                .join(' and ')}{' '}
+              is over Fig. 3.2.2a's height limit (h ≤ 60 ft, or under 90 ft with h/w ≤ 1), so its
+              bands take Fig. 3.2.2f's dimensions — Zone 2 width <code>a</code>, Zone 3 legs{' '}
+              <code>2a</code> by <code>a</code>, no Zone 1' — under the same free-edge rule. FM 1-28
+              draws no abutting case for tall buildings, so this is an extrapolation, not a
+              transcription.{' '}
+            </>
+          )}
           Wall zones keep each section's own <code>a</code>; the lower section's buried wall is
           excluded and the upper section's shared wall starts at the lower roof. Overhangs are not
           modeled at an abutment — see scope doc §10.7.
@@ -184,19 +220,31 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
         </div>
       ) : isMonoslopeRoofResult(roof) ? (
         <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
-          Overhang and parapet are not yet modeled for monoslope roofs. Wall zones use a uniform
-          eave height on all four walls — see scope doc §10.5.
+          Overhang and parapet are not yet modeled for monoslope roofs. Walls are built up to the
+          roof, so the taller high-side wall and the two sloped side walls are in the Zone 4 and 5
+          areas.
         </div>
       ) : isSteepRoofResult(roof) ? (
         <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
-          Overhang and parapet are not yet modeled for gable roofs — see scope doc §10.1.
+          Overhang and parapet are not yet modeled for gable roofs. Gable-end walls run up to the
+          rake (Fig. {roof.pitchBand === '45+' ? '3.4.6b' : '3.2.2e'}), so the triangle above the
+          eave line is in the Zone 4 and 5 areas.
+          {roof.pitchBand === '45+' && (
+            <>
+              {' '}
+              Above 45° FM 1-28 §3.4.6 treats the roof as wall construction, so its slopes carry
+              Zones 4 and 5 and the Zone 5 strip continues up the rakes (Fig. 3.4.6a). The band
+              at the peak is dimensioned <code>a</code> on an elevation view; it is taken here as a
+              vertical drop of <code>a</code>, the wider of the two ways that could be read.
+            </>
+          )}
         </div>
       ) : (
         form.parapetHeight > 0 && (
           <div style={{ ...NOTE_STYLE, marginBottom: 12 }}>
             {roof.parapetCreditsCorners
-              ? `Parapet height (${form.parapetHeight} ft) meets the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table 3.2.2a, note 2) — corner areas shown here are Zone 2, not Zone 3.`
-              : `Parapet height (${form.parapetHeight} ft) is below the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table 3.2.2a, note 2) — zone geometry unaffected.`}
+              ? `Parapet height (${form.parapetHeight} ft) meets the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table ${isTallRoofResult(roof) ? '3.2.2f' : '3.2.2a'}, note 2) — corner areas shown here are Zone 2, not Zone 3.`
+              : `Parapet height (${form.parapetHeight} ft) is below the 3 ft threshold for the Zone 3→Zone 2 corner credit (FM 1-28 Table ${isTallRoofResult(roof) ? '3.2.2f' : '3.2.2a'}, note 2) — zone geometry unaffected.`}
           </div>
         )
       )}
@@ -262,6 +310,7 @@ function ZoneAreaTable({
           </span>
         )}
       </h4>
+      {table.areaNote && <div style={{ ...DETAIL_CELL, paddingBottom: 6 }}>{table.areaNote}</div>}
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--gridline)' }}>

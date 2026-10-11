@@ -2,6 +2,9 @@ import {
   isMonoslopeRoofResult,
   isSteepRoofResult,
   isSteppedRoofResult,
+  isTallRoofResult,
+  roofSlopeFactor,
+  zoneSurfaceArea,
   type ComputationResult,
 } from './buildModel';
 import { steppedSections, type SteppedSection } from './steppedSections';
@@ -97,6 +100,8 @@ export interface ZoneTable {
   title: string;
   /** Elevation of this roof plane, ft above grade. Only set when there's more than one table. */
   elevation?: number;
+  /** How the areas were measured, when that isn't the obvious way — set for a pitched roof. */
+  areaNote?: string;
   zones: ZoneTableEntry[];
 }
 
@@ -113,9 +118,20 @@ export function computeZoneTables(result: ComputationResult, boardSize?: number)
   if (sections.length === 0) {
     const dims = roofZoneDimensions(result, boardSize);
     addWallDimensions(dims, result.walls);
-    const area = (zoneId: AnyZoneId) =>
-      sumArea(isWallZone(zoneId) ? result.walls.pieces : result.roof.pieces, zoneId);
-    return [{ title: 'Zone areas', zones: zoneEntries(dims, area) }];
+    const slope = roofSlopeFactor(result.roof);
+    return [
+      {
+        title: 'Zone areas',
+        // Bands are plan dimensions, but area is what gets covered, so on a
+        // pitched roof it is taken on the slope — and said so, since the two
+        // no longer multiply out.
+        areaNote:
+          slope > 1
+            ? `Roof areas are measured on the slope (plan area × ${slope.toFixed(3)}); band widths are plan dimensions.`
+            : undefined,
+        zones: zoneEntries(dims, (zoneId) => zoneSurfaceArea(result, zoneId)),
+      },
+    ];
   }
 
   const upperWalls = result.step!.upperWalls;
@@ -184,6 +200,17 @@ function roofZoneDimensions(
     return out;
   }
 
+  if (isSteepRoofResult(roof) && roof.pitchBand === '45+') {
+    // Wall zones on a roof: the rake strip is the wall's own `a` strip (see
+    // addWallDimensions), so only the peak band needs figures of its own —
+    // both of them, since it is set out as a drop but covers a plan run.
+    out['5'] = [
+      { label: 'Peak band, vertical', formula: 'a', value: fmt(roof.ridgeBandDrop ?? 0) },
+      { label: 'Peak band, in plan', formula: 'a / tan θ', value: fmt(roof.ridgeOrEaveBand) },
+    ];
+    return out;
+  }
+
   if (isSteepRoofResult(roof)) {
     out['2'] = [{ label: 'Depth from rake', formula: 'a', value: fmtWidth(roof.rakeBand, boardSize) }];
     out['3'] =
@@ -196,6 +223,25 @@ function roofZoneDimensions(
             },
           ]
         : [{ label: 'Width from eave', formula: 'a', value: fmtWidth(roof.ridgeOrEaveBand, boardSize) }];
+    return out;
+  }
+
+  if (isTallRoofResult(roof)) {
+    // Fig. 3.2.2f — mirrors RoofDimensions in Scene3D.tsx. Clamped the way
+    // the engine clamps them, so a small roof shows what was actually built.
+    const band = Math.min(roof.a, roof.roofWidth / 2);
+    const leg = Math.min(roof.cornerLeg, roof.roofLength / 2);
+    const bandForField = boardSize ? Math.min(roundUpToBoard(roof.a, boardSize), roof.roofWidth / 2) : band;
+    if (roof.pieces.some((p) => p.zoneId === '3')) {
+      out['3'] = [
+        { label: 'Leg width', formula: 'a', value: fmtWidth(band, boardSize) },
+        { label: 'Leg length', formula: '2a', value: fmtWidth(leg, boardSize) },
+      ];
+    }
+    if (roof.pieces.some((p) => p.zoneId === '1')) {
+      out['2'] = [{ label: 'Width', formula: 'a', value: fmtWidth(band, boardSize) }];
+      out['1'] = [{ label: 'Width', formula: 'B - 2a', value: fmt(Math.max(0, roof.roofWidth - 2 * bandForField)) }];
+    }
     return out;
   }
 
@@ -275,10 +321,15 @@ function steppedZoneDimensions(
     (out[zoneId] ??= []).push(row);
   };
 
-  if (extents['2']) push('2', { label: 'Width', formula: '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+  // A region over Fig. 3.2.2a's height limit is laid out with Fig. 3.2.2f's
+  // dimensions instead (see steppedRoofZones.ts), so the multipliers differ.
+  const tall = region.regime.regime === 'tall';
+  if (extents['2']) {
+    push('2', { label: 'Width', formula: tall ? 'a' : '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+  }
   if (extents['3']) {
-    push('3', { label: 'Leg width', formula: '0.2h', value: fmtWidth(region.legWidth, boardSize) });
-    push('3', { label: 'Leg length', formula: '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+    push('3', { label: 'Leg width', formula: tall ? 'a' : '0.2h', value: fmtWidth(region.legWidth, boardSize) });
+    push('3', { label: 'Leg length', formula: tall ? '2a' : '0.6h', value: fmtWidth(region.legLength, boardSize) });
   }
 
   const zone1 = extents['1'];

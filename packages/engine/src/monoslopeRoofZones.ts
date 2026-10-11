@@ -52,6 +52,8 @@ export interface MonoslopeRoofZoneResult {
   lowBand: number;
   /** 2a, clamped — size of the low-edge corner zones. 0 for 10-30° (no low corner). */
   lowCornerBand: number;
+  /** Pieces carry PLAN areas; multiply by this, 1/cosθ, for area on the roof surface — see SteepRoofZoneResult. */
+  slopeFactor: number;
   source: 'FM Global 1-28 Fig 3.4.1a' | 'FM Global 1-28 Fig 3.4.1b';
 }
 
@@ -96,6 +98,7 @@ export function computeMonoslopeRoofZones(
   // Local (x, y): x = distance from the HIGH edge, 0..span; y runs along
   // the ridge-parallel direction, 0..rakeExtent, with no high/low meaning.
   const rakeExtent = slopeAxis === 'u' ? frame.width : frame.length;
+  const slopeFactor = 1 / Math.cos((pitch * Math.PI) / 180);
 
   const highBand = Math.min(2 * a.a, span / 2);
   const highCornerBand = Math.min(4 * a.a, rakeExtent / 2);
@@ -189,6 +192,7 @@ export function computeMonoslopeRoofZones(
       highCornerBand,
       lowBand,
       lowCornerBand,
+      slopeFactor,
       source: 'FM Global 1-28 Fig 3.4.1a',
     };
   }
@@ -210,6 +214,7 @@ export function computeMonoslopeRoofZones(
     highCornerBand,
     lowBand,
     lowCornerBand: 0,
+    slopeFactor,
     source: 'FM Global 1-28 Fig 3.4.1b',
   };
 }

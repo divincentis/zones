@@ -15,9 +15,9 @@ export const ZONE_DESCRIPTIONS: Record<AnyZoneId, string> = {
   "1'": 'Roof field (wide buildings only) — beyond 1.2h, or the ridge-adjacent far field',
   '1': 'Roof field',
   '2': 'Roof perimeter / near-ridge or near-rake band',
-  '3': 'Roof corner — L-shaped (low-slope) or ridge/eave corner (steep)',
-  '4': 'Wall field',
-  '5': 'Wall corner strip, width a, full height',
+  '3': 'Roof corner — L-shaped (low-slope and tall buildings) or ridge/eave corner (steep)',
+  '4': 'Wall field — and the field of a roof steeper than 45°, which is zoned as wall',
+  '5': 'Wall corner strip, width a, full height — carried up the rakes and across the peak on a roof steeper than 45°',
 };
 
 const CSS_VAR_BY_ZONE: Record<AnyZoneId, string> = {

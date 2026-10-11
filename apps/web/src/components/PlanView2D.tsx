@@ -1,4 +1,4 @@
-import type { ComputationResult } from '../lib/buildModel';
+import { zoneSurfaceArea, type ComputationResult } from '../lib/buildModel';
 import type { AnyZoneId } from '../lib/zoneColors';
 import { useZoneColors } from '../lib/zoneColors';
 import { describeRoofHover, type HoverInfo } from '../lib/hoverInfo';
@@ -129,7 +129,7 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
         return (
           <g
             key={i}
-            onMouseEnter={() => onHover(describeRoofHover(zoneId, sumPieceArea(pieces, zoneId), roof))}
+            onMouseEnter={() => onHover(describeRoofHover(zoneId, zoneSurfaceArea(result, zoneId), roof))}
             onMouseLeave={() => onHover(null)}
             style={{ cursor: 'pointer' }}
           >
@@ -158,8 +158,4 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
       })}
     </svg>
   );
-}
-
-function sumPieceArea(pieces: ComputationResult['roof']['pieces'], zoneId: string): number {
-  return pieces.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
 }

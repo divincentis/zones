@@ -327,7 +327,7 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
             Overhang and parapet are not yet modeled for {form.roofType} roofs, so those inputs
             are hidden here. Pitch ≤ 7° falls back to the flat/low-slope algorithm automatically.
             {form.roofType === 'gable'
-              ? ' Above 45° is out of scope (no source figure yet).'
+              ? ' Above 45° the roof is zoned as wall construction, Zones 4 and 5 (FM 1-28 §3.4.6).'
               : ' Roof-zone geometry for hip roofs has no sourced figure yet (unlike gable — see scope doc §10.1/§10.3), so computing this building will show an error above 7°; wall zones and mean roof height are still correct.'}
           </div>
         </>
@@ -353,8 +353,7 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
             Overhang and parapet are not yet modeled for monoslope roofs, so those inputs are
             hidden here. Pitch ≤ 3° falls back to the flat/low-slope algorithm automatically
             (FM 1-28 §3.4.1.A). 3°–30° uses Fig. 3.4.1a/b. Above 30° is out of scope (no source
-            figure). Wall zones use a uniform eave height on all four walls — the true high-edge
-            wall and sloped side walls aren&apos;t modeled there yet, only in the 3D envelope shown.
+            figure).
           </div>
         </>
       )}

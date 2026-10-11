@@ -11,3 +11,6 @@ export * from './monoslopeRoofZones.js';
 export * from './steepRoofZones.js';
 export * from './steppedRoofZones.js';
 export * from './steppedWallZones.js';
+export * from './heightRegime.js';
+export * from './roofSurface.js';
+export * from './tallRoofZones.js';
