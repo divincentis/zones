@@ -2,9 +2,23 @@ import type { RectFrame, Vec2, WallZonePiece } from '@zones/engine';
 
 export type Vec3 = [number, number, number];
 
-/** Plan (x, y) at a given height -> Three.js world space (Y-up: height is Y, plan y is Z). */
+/**
+ * Plan (x, y) at a given height -> three.js world space, where Y is up.
+ *
+ * Plan x goes to world Z and plan y to world X — not the other way round,
+ * which looks more natural and is wrong. Plan (x, y, up) is a right-handed
+ * frame, and so is three.js's (X, Y, Z); putting up on Y while leaving x on X
+ * and y on Z swaps two axes of a right-handed frame, which makes a mirror
+ * image. The scene did exactly that until October 2026: every building was
+ * drawn left-for-right, unnoticed because a plain rectangle is its own
+ * mirror image, and wrong for a stepped building or a monoslope. This
+ * assignment keeps the handedness with all three axes positive.
+ *
+ * Everything that places something in the scene goes through here, so the
+ * choice is made once.
+ */
 export function planToWorld(v: Vec2, height: number): Vec3 {
-  return [v[0], height, v[1]];
+  return [v[1], height, v[0]];
 }
 
 export function roofPieceCorners(vertices: Vec2[], height: number): Vec3[] {
@@ -104,11 +118,8 @@ export function wallPieceCorners(piece: WallZonePiece, edgeStart: Vec2, edgeEnd:
   const dirX = dx / len;
   const dirY = dy / len;
 
-  const point = (along: number, height: number): Vec3 => [
-    edgeStart[0] + along * dirX,
-    height,
-    edgeStart[1] + along * dirY,
-  ];
+  const point = (along: number, height: number): Vec3 =>
+    planToWorld([edgeStart[0] + along * dirX, edgeStart[1] + along * dirY], height);
 
   return [
     point(piece.alongMin, piece.baseAtMin),

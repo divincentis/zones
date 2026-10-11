@@ -317,9 +317,22 @@ button {
   pointer-events: auto;
 }
 
+.view-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .view-toggle {
   display: flex;
   gap: 4px;
+}
+
+/* The 3D view's own controls, a size down from the buttons that choose the view. */
+.view-button-small {
+  padding: 4px 9px;
+  font-size: 12px;
 }
 
 .view-export {
@@ -331,6 +344,7 @@ button {
 }
 
 .view-button {
+  white-space: nowrap;
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -495,15 +509,25 @@ button {
     color: var(--text-muted);
   }
 
-  /* Mobile Safari zooms the page into any field whose text is under 16px. */
+  /* Mobile Safari zooms the page into any field whose text is under 16px.
+     Fields only: a button is not typed into, and at 16px the view's buttons
+     no longer fit across a phone. */
   input,
-  select,
-  button {
+  select {
     font-size: 16px;
+  }
+
+  .app-tab {
+    font-size: 15px;
   }
 
   .project-bar-buttons button {
     min-height: 40px;
+    font-size: 14px;
+  }
+
+  .view-button-small {
+    min-height: 36px;
     font-size: 14px;
   }
 }

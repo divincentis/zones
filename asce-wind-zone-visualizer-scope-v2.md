@@ -426,3 +426,18 @@ The app was one 1.6 MB script, and the page was blank until all of it had arrive
 Same test after: placeholder at 0.2 s, usable form and figures at 1.6 s, 3D view at 3.2 s.
 
 **Controls, from the same review:** Export PDF is the primary button, apart from the view switch, and reports "Preparing…" and "PDF saved"; the 3D/2D switch says which is pressed; length fields step a foot with the arrow keys, ten with Shift, as they did before they became text fields.
+
+### 10.15 Update — 2026-10-11: The 3D view was a mirror image; and it gets views, a labels switch and a quieter ground
+
+**The mirror image.** `planToWorld` put plan x on three.js's X, height on Y and plan y on Z. Plan (x, y, up) and three.js (X, Y, Z) are both right-handed frames, and that assignment swaps two axes of one, so every building in the 3D view was drawn left-for-right. A plain rectangle is its own mirror image, which is why nobody saw it; a stepped building with its second section off-centre, a monoslope's high side, and a gable's ridge direction were all the wrong way round compared with the plan — and with the building. It surfaced when a top view was added and did not match the 2D plan.
+
+- `planToWorld` now sends plan x to world Z and plan y to world X, which keeps the handedness with all three axes positive. Everything that places something in the scene goes through that one function; the facing tracker, the lights, the camera and the axis gizmo's labels were the only other places that knew which axis was which.
+- The scene now opens from in front of the building (the bottom of the plan) and to its right, so length runs left to right as it does on the plan. For a plain rectangle this looks exactly as the mirrored view from behind did.
+- Nothing in the engine, the plan, the tables or the PDF's plan sheet was affected: only the 3D picture, and the 3D image in an exported PDF.
+
+**The view's own controls**, under the 3D/2D switch:
+
+- **Reset, Top, Front.** Reset is the opening view. Top looks straight down in the plan's orientation (a hair off vertical, which is what keeps the top of the screen the top of the plan). Front is the elevation of the bottom wall. A view stays the one asked for while the building is edited, and orbiting from it is as free as before.
+- **Labels** turns the dimension call-outs off and on. Off, the exported PDF's 3D image has none either: it is the view as framed.
+
+**Smaller things:** the ground grid takes its colours from the theme and sits under the building instead of drawing black lines across it; the step call-out is just the figure (what the step means for the zoning is in the panel); the Height dimension stands on the line of the near wall, where its label is inside the frame at every size tried; buttons on a phone are no longer lifted to 16 px along with the fields.

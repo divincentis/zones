@@ -47,6 +47,9 @@ interface Props {
   /** Board width (ft) to round zone-width call-outs up to, mirroring the "Zone areas" table. null/undefined = off. */
   boardSize?: number | null;
   units: LengthUnits;
+  /** Whether the dimension call-outs are drawn. */
+  showLabels: boolean;
+  viewRequest: ViewRequest;
 }
 
 /**
@@ -88,8 +91,55 @@ const DIM_PRIORITY = {
 } as const;
 
 // Multiplier on the camera's default distance from the building, so the
-// initial framing sits back from the model a bit rather than crowding it.
-const CAMERA_DISTANCE_SCALE = 1.2;
+// initial framing sits back from the model a bit rather than crowding it —
+// far enough that the height dimension, which stands off the left-hand
+// corner, is inside the frame rather than cut by its edge.
+const CAMERA_DISTANCE_SCALE = 1.3;
+
+/** Vertical field of view, degrees. */
+const CAMERA_FOV = 40;
+
+/**
+ * The standard views. 'corner' is the one the scene opens in: from in front
+ * of the building (the bottom of the plan) and to its right, so that length
+ * runs left to right as it does on the plan. 'top' looks straight down with
+ * the plan's own orientation; 'front' is the elevation of the bottom wall.
+ */
+export type StandardView = 'corner' | 'top' | 'front';
+
+/** Which view was last asked for; `id` changes with every request, so asking for the same one twice still counts. */
+export interface ViewRequest {
+  view: StandardView;
+  id: number;
+}
+
+/**
+ * Where the camera stands for a standard view, relative to the point it
+ * looks at. World X is plan y and world Z is plan x (see planToWorld), so
+ * "in front" — toward the bottom of the plan — is world -X.
+ */
+function standardViewOffset(
+  view: StandardView,
+  maxSpan: number,
+  extent: { x: number; y: number; height: number },
+  aspect: number
+): Vec3 {
+  // How far back a `size`-high subject fills the frame top to bottom.
+  const toFit = (size: number) => size / (2 * Math.tan((CAMERA_FOV * Math.PI) / 360));
+  if (view === 'top') {
+    const distance = toFit(Math.max(extent.y, extent.x / aspect)) * 1.3 + extent.height;
+    // A hair in front of straight overhead, which is what makes the top of
+    // the screen the top of the plan: the controls keep the camera upright,
+    // and exactly overhead there is no upright to keep.
+    return [-distance * 0.001, distance, 0];
+  }
+  if (view === 'front') {
+    const distance = toFit(Math.max(extent.height, extent.x / aspect)) * 1.3 + extent.y / 2;
+    return [-distance, 0, 0];
+  }
+  const distance = maxSpan * CAMERA_DISTANCE_SCALE * (aspect >= 1 ? 1 : Math.min(2.2, 1 / aspect));
+  return [-distance * 1.09, distance * 0.84, distance * 0.75];
+}
 
 /**
  * Canvas's `camera={{ position }}` shorthand only applies once, at creation
@@ -99,26 +149,41 @@ const CAMERA_DISTANCE_SCALE = 1.2;
  * a target that jumped away, at a distance/near/far tuned for the old scale.
  * That's what makes the model hard to find and can clip it entirely (far
  * plane too close for the new span). Refit the camera imperatively whenever
- * the building's span or center actually changes.
+ * the building's span or center actually changes, or a standard view is
+ * asked for.
  */
-function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
+function CameraRig({
+  maxSpan,
+  center,
+  extent,
+  request,
+}: {
+  maxSpan: number;
+  center: Vec3;
+  extent: { x: number; y: number; height: number };
+  request: ViewRequest;
+}) {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
+  const get = useThree((state) => state.get);
   // The field of view is fixed vertically, so a portrait viewport — a phone —
   // sees less from side to side and the default distance crops the building.
-  // Stand back in proportion. Stepped in tenths, and left at 1 for anything
-  // landscape, so dragging a desktop window's edge never refits the camera
-  // and throws away the angle the user had turned it to.
-  const pullBack = useThree((state) => {
+  // The views stand back in proportion (standardViewOffset). Tracked here in
+  // tenths, and left at 1 for anything landscape, so that turning a phone
+  // refits the view but dragging a desktop window's edge never does, and
+  // never throws away the angle the user had turned the model to.
+  const portrait = useThree((state) => {
     const aspect = state.size.height > 0 ? state.size.width / state.size.height : 1;
-    return aspect >= 1 ? 1 : Math.min(2.2, Math.round((1 / aspect) * 10) / 10);
+    return aspect >= 1 ? 1 : Math.round(aspect * 10) / 10;
   });
 
   useEffect(() => {
-    const distance = maxSpan * CAMERA_DISTANCE_SCALE * pullBack;
-    camera.position.set(distance * 1.08, distance * 0.9, distance * 1.32);
+    const { size } = get();
+    const aspect = size.height > 0 ? size.width / size.height : 1;
+    const offset = standardViewOffset(request.view, maxSpan, extent, aspect);
+    camera.position.set(center[0] + offset[0], center[1] + offset[1], center[2] + offset[2]);
     camera.near = 0.1;
-    camera.far = Math.max(1000, maxSpan * 8 * pullBack);
+    camera.far = Math.max(1000, maxSpan * 20);
     camera.updateProjectionMatrix();
     camera.lookAt(center[0], center[1], center[2]);
 
@@ -127,9 +192,27 @@ function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
       controls.update();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, controls, maxSpan, pullBack, center[0], center[1], center[2]]);
+  }, [camera, controls, maxSpan, portrait, request.view, request.id, extent.x, extent.y, extent.height, center[0], center[1], center[2]]);
 
   return null;
+}
+
+/** A colour from the page's theme (theme.css), re-read when the OS switches between light and dark. */
+function useThemeColor(name: string, fallback: string): string {
+  const read = () =>
+    typeof document === 'undefined'
+      ? fallback
+      : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const [color, setColor] = useState(read);
+  useEffect(() => {
+    setColor(read());
+    const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setColor(read());
+    scheme.addEventListener('change', onChange);
+    return () => scheme.removeEventListener('change', onChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name]);
+  return color;
 }
 
 function rotateMinus90(d: Vec2): Vec2 {
@@ -167,8 +250,9 @@ function FacingTracker({ center, onChange }: { center: Vec3; onChange: (facing: 
 
   useFrame(() => {
     const next: Facing = {
-      sx: camera.position.x >= center[0] ? 1 : -1,
-      sy: camera.position.z >= center[2] ? 1 : -1,
+      // Plan x is world Z and plan y is world X (see planToWorld).
+      sx: camera.position.z >= center[2] ? 1 : -1,
+      sy: camera.position.x >= center[0] ? 1 : -1,
     };
     if (!sameFacing(next, lastRef.current)) {
       lastRef.current = next;
@@ -734,10 +818,9 @@ function SteppedRoofDimensions({
       <DimensionLine
         from={planToWorld([abutMidX, abutMidY], roof.lower.elevation)}
         to={planToWorld([abutMidX, abutMidY], roof.upper.elevation)}
-        label={
-          `Step = ${formatLength(roof.heightDifference, units)} ` +
-          `(${roof.treatment === 'separate' ? `>= ${roof.threshold} ft: two roofs, Fig. 3.2.2b` : `< ${roof.threshold} ft: one roof, Fig. 3.2.2c`})`
-        }
+        // Just the figure: what the step means for the zoning is in the panel,
+        // and spelled out here it was a sentence laid across the model.
+        label={`Step = ${formatLength(roof.heightDifference, units)}`}
         color={RED}
       />
     </group>
@@ -943,9 +1026,11 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   const width = maxY - minY;
 
   const outset = Math.max(3, maxSpan * 0.06);
-  // Pushed further out than outset so the Height dimension doesn't stack on
-  // the L/B labels.
-  const cornerOutset = outset * 1.8;
+  // The Height dimension stands just off the building's left-hand end, on
+  // the line of the near wall rather than out in front of it: L runs a full
+  // outset in front of that wall, so the two stay apart, and the label stays
+  // inside the frame, which it did not when this stood further out.
+  const cornerOutset = outset * 0.7;
   const { sx, sy } = facing;
   const lineY = sy > 0 ? maxY + outset : minY - outset;
   const lineX = sx > 0 ? maxX + outset : minX - outset;
@@ -955,7 +1040,7 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   // camera angle) regardless of orbiting — a fixed elevation convention
   // rather than one that jumps around and lands on the camera's near side.
   const cornerX = minX - cornerOutset;
-  const cornerY = sy > 0 ? maxY + cornerOutset : minY - cornerOutset;
+  const cornerY = sy > 0 ? maxY : minY;
 
   const at = (p: Vec2, height = 0): Vec3 => planToWorld(p, height);
 
@@ -984,8 +1069,8 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
       />
       {step && (
         <DimensionLine
-          from={at([cornerX - outset, cornerY], 0)}
-          to={at([cornerX - outset, cornerY], step.upper.eaveHeight)}
+          from={at([cornerX - outset * 0.8, cornerY], 0)}
+          to={at([cornerX - outset * 0.8, cornerY], step.upper.eaveHeight)}
           label={`Height (upper) = ${formatLength(step.upper.eaveHeight, units)}`}
           priority={DIM_PRIORITY.building}
           color={GREEN}
@@ -995,7 +1080,16 @@ function BuildingDimensions({ result, maxSpan, facing }: { result: ComputationRe
   );
 }
 
-export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, units }: Props) {
+export function Scene3D({
+  result,
+  onHover,
+  hovered,
+  onCanvasReady,
+  boardSize,
+  units,
+  showLabels,
+  viewRequest,
+}: Props) {
   const colors = useZoneColors();
   const { building, roof, walls, step } = result;
   const isSteep = isSteepRoofResult(roof);
@@ -1011,11 +1105,16 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, un
   const allVertices = step ? [...building.vertices, ...step.upper.vertices] : building.vertices;
   const topHeight = Math.max(building.eaveHeight, step?.upper.eaveHeight ?? 0);
   const maxSpan = Math.max(...allVertices.map((v) => Math.hypot(v[0], v[1])), topHeight);
-  const center: Vec3 = [
-    (Math.min(...allVertices.map((v) => v[0])) + Math.max(...allVertices.map((v) => v[0]))) / 2,
-    topHeight / 2,
-    (Math.min(...allVertices.map((v) => v[1])) + Math.max(...allVertices.map((v) => v[1]))) / 2,
-  ];
+  const xs = allVertices.map((v) => v[0]);
+  const ys = allVertices.map((v) => v[1]);
+  const extent = { x: Math.max(...xs) - Math.min(...xs), y: Math.max(...ys) - Math.min(...ys), height: topHeight };
+  const planCenter: Vec2 = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  const center = planToWorld(planCenter, topHeight / 2);
+  const ground = planToWorld(planCenter, 0);
+  // Quiet enough to sit under the building rather than compete with it.
+  const gridLine = useThemeColor('--gridline', '#e4dfd4');
+  const gridAxis = useThemeColor('--baseline', '#cdc6b8');
+  const initialOffset = standardViewOffset('corner', maxSpan, extent, 1);
 
   const gableGeom = useMemo(
     () => (isSteep && ridgeLine ? resolveRidgeGeometry(building) : null),
@@ -1058,22 +1157,20 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, un
         canvas.addEventListener('webglcontextrestored', handleContextRestored);
       }}
       camera={{
-        position: [
-          maxSpan * CAMERA_DISTANCE_SCALE * 1.08,
-          maxSpan * CAMERA_DISTANCE_SCALE * 0.9,
-          maxSpan * CAMERA_DISTANCE_SCALE * 1.32,
-        ],
-        fov: 40,
-        far: Math.max(1000, maxSpan * 8),
+        position: [center[0] + initialOffset[0], center[1] + initialOffset[1], center[2] + initialOffset[2]],
+        fov: CAMERA_FOV,
+        far: Math.max(1000, maxSpan * 20),
       }}
     >
-      <CameraRig maxSpan={maxSpan} center={center} />
+      <CameraRig maxSpan={maxSpan} center={center} extent={extent} request={viewRequest} />
       <FacingTracker center={center} onChange={setFacing} />
       <ambientLight intensity={0.65} />
-      <directionalLight position={[maxSpan, maxSpan * 1.5, maxSpan]} intensity={1.1} />
-      <directionalLight position={[-maxSpan, maxSpan, -maxSpan]} intensity={0.3} />
+      {/* The main light from the front right, where the corner view stands;
+          a weak one from behind so the far walls are not flat black. */}
+      <directionalLight position={[center[0] - maxSpan, maxSpan * 1.5, center[2] + maxSpan]} intensity={1.1} />
+      <directionalLight position={[center[0] + maxSpan, maxSpan, center[2] - maxSpan]} intensity={0.3} />
 
-      <gridHelper args={[maxSpan * 3, 24, '#666', '#333']} />
+      <gridHelper args={[maxSpan * 3, 24, gridAxis, gridLine]} position={ground} />
 
       {renderedRoofPieces.map((piece, i) => {
         const zoneId = piece.zoneId as AnyZoneId;
@@ -1155,6 +1252,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, un
         })
       )}
 
+      {showLabels && (
       <LengthUnitsContext.Provider value={units}>
       <LabelCollisionProvider>
         {isSteep ? (
@@ -1178,14 +1276,14 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize, un
         <BuildingDimensions result={result} maxSpan={maxSpan} facing={facing} />
       </LabelCollisionProvider>
       </LengthUnitsContext.Provider>
+      )}
 
       <OrbitControls makeDefault target={center} />
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
-        {/* Scene "up" is three.js's Y axis, but construction convention treats
-            Z as vertical, so the gizmo's up-pointing axis is relabeled Z (and
-            the horizontal one Y) purely for display — no scene geometry uses
-            these axes, so nothing else needs to change. */}
-        <GizmoViewport labels={['X', 'Z', 'Y']} />
+        {/* Labelled with the plan's axes, not three.js's own: its X carries
+            plan y, its Y is up (Z to anyone in construction), and its Z
+            carries plan x — see planToWorld. */}
+        <GizmoViewport labels={['Y', 'Z', 'X']} />
       </GizmoHelper>
     </Canvas>
   );

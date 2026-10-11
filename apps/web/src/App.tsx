@@ -5,6 +5,7 @@ import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { ProjectBar } from './components/ProjectBar';
 import { computeZones, type FormState } from './lib/buildModel';
+import type { StandardView, ViewRequest } from './components/Scene3D';
 import type { HoverInfo } from './lib/hoverInfo';
 import type { LengthUnits } from './lib/lengthFormat';
 import type { Project } from './lib/project';
@@ -94,6 +95,10 @@ export function App() {
   const [units, setUnits] = useState<LengthUnits>(initial.project.units);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
   const [exporting, setExporting] = useState<ExportState>('idle');
+  // How the 3D view is looked at — not part of the building, so not saved with it.
+  const [showLabels, setShowLabels] = useState(true);
+  const [viewRequest, setViewRequest] = useState<ViewRequest>({ view: 'corner', id: 0 });
+  const lookFrom = (next: StandardView) => setViewRequest((last) => ({ view: next, id: last.id + 1 }));
 
   const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
 
@@ -171,18 +176,43 @@ export function App() {
 
       <main className="app-panel app-view" data-active={panel === 'view'}>
         <div className="view-bar">
-          <div role="group" aria-label="View" className="view-toggle">
-            {(['3d', '2d'] as ViewMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className="view-button"
-                aria-pressed={view === mode}
-                onClick={() => setView(mode)}
-              >
-                {mode.toUpperCase()}
-              </button>
-            ))}
+          <div className="view-left">
+            <div role="group" aria-label="View" className="view-toggle">
+              {(['3d', '2d'] as ViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className="view-button"
+                  aria-pressed={view === mode}
+                  onClick={() => setView(mode)}
+                >
+                  {mode.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {view === '3d' && outcome.ok && (
+              <div role="group" aria-label="3D view" className="view-toggle">
+                {(
+                  [
+                    ['corner', 'Reset'],
+                    ['top', 'Top'],
+                    ['front', 'Front'],
+                  ] as const
+                ).map(([standard, label]) => (
+                  <button key={standard} type="button" className="view-button view-button-small" onClick={() => lookFrom(standard)}>
+                    {label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="view-button view-button-small"
+                  aria-pressed={showLabels}
+                  onClick={() => setShowLabels((on) => !on)}
+                >
+                  Labels
+                </button>
+              </div>
+            )}
           </div>
           {outcome.ok && (
             <div className="view-export">
@@ -227,6 +257,8 @@ export function App() {
                   onCanvasReady={setCanvasEl}
                   boardSize={boardSize}
                   units={units}
+                  showLabels={showLabels}
+                  viewRequest={viewRequest}
                 />
               </Suspense>
             </ViewBoundary>
