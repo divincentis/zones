@@ -100,6 +100,8 @@ export function PlanView2D({ result, onHover, hovered }: Props) {
                 strokeWidth={0.4}
                 style={{ cursor: prim.hover ? 'pointer' : undefined, filter: lit ? 'brightness(1.18)' : undefined }}
                 onMouseEnter={prim.hover ? () => onHover(hoverFor(prim)) : undefined}
+              // For a finger, which lands without ever having hovered.
+              onClick={prim.hover ? () => onHover(hoverFor(prim)) : undefined}
                 onMouseLeave={prim.hover ? () => onHover(null) : undefined}
               />
             );

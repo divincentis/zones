@@ -7,7 +7,7 @@ interface Props {
   corners: [Vec3, Vec3, Vec3, Vec3];
   color: string;
   hovered: boolean;
-  onHoverStart: (e: ThreeEvent<PointerEvent>) => void;
+  onHoverStart: (e: ThreeEvent<PointerEvent | MouseEvent>) => void;
   onHoverEnd: () => void;
 }
 
@@ -32,6 +32,13 @@ export function ZoneQuad({ corners, color, hovered, onHoverStart, onHoverEnd }: 
       onPointerOut={(e) => {
         e.stopPropagation();
         onHoverEnd();
+      }}
+      // A finger never hovers: it lands and lifts without moving, which is a
+      // click and nothing else. Treat that as pointing at the zone too. (A
+      // drag to turn the model is not a click, so it doesn't pick anything.)
+      onClick={(e) => {
+        e.stopPropagation();
+        onHoverStart(e);
       }}
     >
       <meshStandardMaterial

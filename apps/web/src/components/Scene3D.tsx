@@ -94,15 +94,21 @@ const CAMERA_DISTANCE_SCALE = 1.2;
 function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const controls = useThree((state) => state.controls) as unknown as OrbitControlsImpl | null;
+  // The field of view is fixed vertically, so a portrait viewport — a phone —
+  // sees less from side to side and the default distance crops the building.
+  // Stand back in proportion. Stepped in tenths, and left at 1 for anything
+  // landscape, so dragging a desktop window's edge never refits the camera
+  // and throws away the angle the user had turned it to.
+  const pullBack = useThree((state) => {
+    const aspect = state.size.height > 0 ? state.size.width / state.size.height : 1;
+    return aspect >= 1 ? 1 : Math.min(2.2, Math.round((1 / aspect) * 10) / 10);
+  });
 
   useEffect(() => {
-    camera.position.set(
-      maxSpan * CAMERA_DISTANCE_SCALE * 1.08,
-      maxSpan * CAMERA_DISTANCE_SCALE * 0.9,
-      maxSpan * CAMERA_DISTANCE_SCALE * 1.32
-    );
+    const distance = maxSpan * CAMERA_DISTANCE_SCALE * pullBack;
+    camera.position.set(distance * 1.08, distance * 0.9, distance * 1.32);
     camera.near = 0.1;
-    camera.far = Math.max(1000, maxSpan * 8);
+    camera.far = Math.max(1000, maxSpan * 8 * pullBack);
     camera.updateProjectionMatrix();
     camera.lookAt(center[0], center[1], center[2]);
 
@@ -111,7 +117,7 @@ function CameraRig({ maxSpan, center }: { maxSpan: number; center: Vec3 }) {
       controls.update();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, controls, maxSpan, center[0], center[1], center[2]]);
+  }, [camera, controls, maxSpan, pullBack, center[0], center[1], center[2]]);
 
   return null;
 }

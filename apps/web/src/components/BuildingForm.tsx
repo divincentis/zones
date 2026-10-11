@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import type { ABasis, RoofType } from '@zones/engine';
 import type {
   FormState,
@@ -47,6 +47,9 @@ function NumberField(props: {
   // re-rendered showing "0", and the next digit typed landed after it.
   const [text, setText] = useState(String(props.value));
   const lastEmitted = useRef(props.value);
+  // Ties the label to the field, so touching the label focuses it — on a
+  // phone the label is a far bigger target than the box under it.
+  const id = useId();
 
   useEffect(() => {
     if (props.value !== lastEmitted.current) {
@@ -66,9 +69,14 @@ function NumberField(props: {
 
   return (
     <div style={ROW_STYLE}>
-      <label style={LABEL_STYLE}>{props.label}</label>
+      <label style={LABEL_STYLE} htmlFor={id}>
+        {props.label}
+      </label>
       <input
+        id={id}
         type="number"
+        // Brings up the numeric keypad with a decimal point on a phone.
+        inputMode="decimal"
         style={FIELD_STYLE}
         value={text}
         min={props.min ?? 0}

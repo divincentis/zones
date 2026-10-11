@@ -67,7 +67,7 @@ export function AssumptionsPanel({ result, form, hovered, boardSize }: Props) {
           <div style={{ color: 'var(--text-secondary)' }}>{hovered.note}</div>
         </div>
       ) : (
-        <div style={{ marginBottom: 14, color: 'var(--text-muted)' }}>Hover a zone for details.</div>
+        <div style={{ marginBottom: 14, color: 'var(--text-muted)' }}>Hover over a zone, or tap one, for details.</div>
       )}
 
       <h3 style={SECTION_TITLE}>Derived parameters</h3>

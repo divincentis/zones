@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BuildingForm } from './components/BuildingForm';
 import { PlanView2D } from './components/PlanView2D';
 import { Scene3D } from './components/Scene3D';
@@ -7,14 +7,36 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
 import { exportZonePdf } from './lib/pdfExport';
+import { ZONE_LABELS } from './lib/zoneColors';
 import { APP_VERSION } from './version';
 
 type ViewMode = '3d' | '2d';
 
+/**
+ * The three panels. Side by side on a wide screen; on a phone only one is
+ * shown at a time, picked from the tab bar. Which one is "active" is always
+ * tracked, and it is the stylesheet (theme.css, "Layout") that decides
+ * whether that hides the others — so nothing here asks how wide the screen is.
+ */
+type Panel = 'inputs' | 'view' | 'results';
+
+const PANEL_LABELS: Record<Panel, string> = {
+  inputs: 'Building',
+  view: 'View',
+  results: 'Zones',
+};
+
 export function App() {
   const [form, setForm] = useState<FormState>(DEFAULT_FORM_STATE);
   const [view, setView] = useState<ViewMode>('3d');
+  const [panel, setPanel] = useState<Panel>('view');
   const [hovered, setHovered] = useState<HoverInfo | null>(null);
+  /**
+   * The last zone pointed at, kept after the pointer leaves. A finger has no
+   * hover: it touches a zone and lifts, and on a phone the panel that would
+   * have described the zone is on another tab. The view shows this instead.
+   */
+  const [touched, setTouched] = useState<HoverInfo | null>(null);
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   /** Board width (ft) to round zone widths up to for takeoff, e.g. 4 or 8 ft. null = off. */
   const [boardSize, setBoardSize] = useState<number | null>(null);
@@ -22,19 +44,20 @@ export function App() {
 
   const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
 
+  // Its area is stale the moment the building changes.
+  useEffect(() => setTouched(null), [outcome]);
+
+  const handleHover = (info: HoverInfo | null) => {
+    setHovered(info);
+    if (info) setTouched(info);
+  };
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 260px', height: '100%' }}>
+    <div className="app">
       {!disclaimerAcknowledged && (
         <DisclaimerModal onAcknowledge={() => setDisclaimerAcknowledged(true)} />
       )}
-      <aside
-        style={{
-          borderRight: '1px solid var(--border)',
-          padding: 16,
-          overflowY: 'auto',
-          background: 'var(--surface-1)',
-        }}
-      >
+      <aside className="app-panel app-inputs" data-active={panel === 'inputs'}>
         <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>
           <a href="/" className="brand-link">
             zbCAD
@@ -56,7 +79,7 @@ export function App() {
         />
       </aside>
 
-      <main style={{ position: 'relative', background: 'var(--surface-0)', minHeight: 0, overflow: 'hidden' }}>
+      <main className="app-panel app-view" data-active={panel === 'view'}>
         <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1, display: 'flex', gap: 4 }}>
           {(['3d', '2d'] as ViewMode[]).map((mode) => (
             <button
@@ -102,30 +125,43 @@ export function App() {
           view === '3d' ? (
             <Scene3D
               result={outcome.result}
-              onHover={setHovered}
+              onHover={handleHover}
               hovered={hovered}
               onCanvasReady={setCanvasEl}
               boardSize={boardSize}
             />
           ) : (
-            <PlanView2D result={outcome.result} onHover={setHovered} hovered={hovered} />
+            <PlanView2D result={outcome.result} onHover={handleHover} hovered={hovered} />
           )
         ) : (
-          <div style={{ padding: 40, color: 'var(--zone-1)', maxWidth: 480 }}>
+          <div className="app-error">
             <h2 style={{ fontSize: 14 }}>Cannot compute zones</h2>
             <p>{outcome.error}</p>
           </div>
         )}
+
+        {outcome.ok && touched && (
+          <button
+            type="button"
+            className="zone-chip"
+            aria-label="Dismiss zone details"
+            onClick={() => {
+              setTouched(null);
+              setHovered(null);
+            }}
+          >
+            <strong>
+              {ZONE_LABELS[touched.zoneId]} ({touched.source})
+            </strong>{' '}
+            {touched.area.toFixed(1)} ft²
+            <span aria-hidden="true" className="zone-chip-close">
+              ×
+            </span>
+          </button>
+        )}
       </main>
 
-      <aside
-        style={{
-          borderLeft: '1px solid var(--border)',
-          padding: 16,
-          overflowY: 'auto',
-          background: 'var(--surface-1)',
-        }}
-      >
+      <aside className="app-panel app-results" data-active={panel === 'results'}>
         {outcome.ok && (
           <AssumptionsPanel
             result={outcome.result}
@@ -135,6 +171,20 @@ export function App() {
           />
         )}
       </aside>
+
+      <nav className="app-tabs" aria-label="Panels">
+        {(Object.keys(PANEL_LABELS) as Panel[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            className="app-tab"
+            aria-pressed={panel === key}
+            onClick={() => setPanel(key)}
+          >
+            {PANEL_LABELS[key]}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
