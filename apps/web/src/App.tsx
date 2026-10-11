@@ -4,9 +4,12 @@ import { PlanView2D } from './components/PlanView2D';
 import { Scene3D } from './components/Scene3D';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { DisclaimerModal } from './components/DisclaimerModal';
-import { computeZones, DEFAULT_FORM_STATE, type FormState } from './lib/buildModel';
+import { ProjectBar } from './components/ProjectBar';
+import { computeZones, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
 import { exportZonePdf } from './lib/pdfExport';
+import type { Project } from './lib/project';
+import { clearLinkFromAddress, loadInitialProject, writeAutosave } from './lib/projectStorage';
 import { ZONE_LABELS } from './lib/zoneColors';
 import { APP_VERSION } from './version';
 
@@ -27,7 +30,10 @@ const PANEL_LABELS: Record<Panel, string> = {
 };
 
 export function App() {
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM_STATE);
+  // Where the building came from is settled once, as the page opens: a
+  // followed link, else what was here last time, else the default.
+  const [initial] = useState(loadInitialProject);
+  const [form, setForm] = useState<FormState>(initial.project.form);
   const [view, setView] = useState<ViewMode>('3d');
   const [panel, setPanel] = useState<Panel>('view');
   const [hovered, setHovered] = useState<HoverInfo | null>(null);
@@ -39,10 +45,27 @@ export function App() {
   const [touched, setTouched] = useState<HoverInfo | null>(null);
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   /** Board width (ft) to round zone widths up to for takeoff, e.g. 4 or 8 ft. null = off. */
-  const [boardSize, setBoardSize] = useState<number | null>(null);
+  const [boardSize, setBoardSize] = useState<number | null>(initial.project.boardSize);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
 
   const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
+
+  useEffect(() => {
+    if (initial.hadLink) clearLinkFromAddress();
+  }, [initial]);
+
+  // Kept in the browser as it is typed, so a reload or a closed tab loses
+  // nothing. A short wait, so a number being typed is written once, not once
+  // a digit.
+  useEffect(() => {
+    const timer = window.setTimeout(() => writeAutosave({ form, boardSize }), 300);
+    return () => window.clearTimeout(timer);
+  }, [form, boardSize]);
+
+  const openProject = (project: Project) => {
+    setForm(project.form);
+    setBoardSize(project.boardSize);
+  };
 
   // Its area is stale the moment the building changes.
   useEffect(() => setTouched(null), [outcome]);
@@ -68,9 +91,10 @@ export function App() {
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 4px', opacity: 0.7 }}>
           v{APP_VERSION}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 16px', minHeight: 15 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px', minHeight: 15 }}>
           {form.projectName.trim()}
         </div>
+        <ProjectBar project={{ form, boardSize }} onOpen={openProject} initialNotice={initial.notice} />
         <BuildingForm
           form={form}
           onChange={setForm}
