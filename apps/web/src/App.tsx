@@ -7,6 +7,7 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { ProjectBar } from './components/ProjectBar';
 import { computeZones, type FormState } from './lib/buildModel';
 import type { HoverInfo } from './lib/hoverInfo';
+import type { LengthUnits } from './lib/lengthFormat';
 import { exportZonePdf } from './lib/pdfExport';
 import type { Project } from './lib/project';
 import { clearLinkFromAddress, loadInitialProject, writeAutosave } from './lib/projectStorage';
@@ -46,6 +47,7 @@ export function App() {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   /** Board width (ft) to round zone widths up to for takeoff, e.g. 4 or 8 ft. null = off. */
   const [boardSize, setBoardSize] = useState<number | null>(initial.project.boardSize);
+  const [units, setUnits] = useState<LengthUnits>(initial.project.units);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
 
   const outcome = useMemo(() => computeZones(form, boardSize ?? undefined), [form, boardSize]);
@@ -58,13 +60,14 @@ export function App() {
   // nothing. A short wait, so a number being typed is written once, not once
   // a digit.
   useEffect(() => {
-    const timer = window.setTimeout(() => writeAutosave({ form, boardSize }), 300);
+    const timer = window.setTimeout(() => writeAutosave({ form, boardSize, units }), 300);
     return () => window.clearTimeout(timer);
-  }, [form, boardSize]);
+  }, [form, boardSize, units]);
 
   const openProject = (project: Project) => {
     setForm(project.form);
     setBoardSize(project.boardSize);
+    setUnits(project.units);
   };
 
   // Its area is stale the moment the building changes.
@@ -94,12 +97,14 @@ export function App() {
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px', minHeight: 15 }}>
           {form.projectName.trim()}
         </div>
-        <ProjectBar project={{ form, boardSize }} onOpen={openProject} initialNotice={initial.notice} />
+        <ProjectBar project={{ form, boardSize, units }} onOpen={openProject} initialNotice={initial.notice} />
         <BuildingForm
           form={form}
           onChange={setForm}
           boardSize={boardSize}
           onBoardSizeChange={setBoardSize}
+          units={units}
+          onUnitsChange={setUnits}
         />
       </aside>
 
@@ -127,7 +132,7 @@ export function App() {
               // From the 3D view the PDF leads with that view as framed; from
               // the plan there is no framed view, so it leads with the plan.
               onClick={() =>
-                exportZonePdf(view === '3d' ? canvasEl : null, outcome.result, form, boardSize ?? undefined, APP_VERSION)
+                exportZonePdf(view === '3d' ? canvasEl : null, outcome.result, form, boardSize ?? undefined, units, APP_VERSION)
               }
               disabled={view === '3d' && !canvasEl}
               style={{
@@ -153,13 +158,14 @@ export function App() {
               hovered={hovered}
               onCanvasReady={setCanvasEl}
               boardSize={boardSize}
+              units={units}
             />
           ) : (
-            <PlanView2D result={outcome.result} onHover={handleHover} hovered={hovered} />
+            <PlanView2D result={outcome.result} onHover={handleHover} hovered={hovered} units={units} />
           )
         ) : (
-          <div className="app-error">
-            <h2 style={{ fontSize: 14 }}>Cannot compute zones</h2>
+          <div className="app-error" role="alert">
+            <h2>This building can&apos;t be zoned yet</h2>
             <p>{outcome.error}</p>
           </div>
         )}
@@ -186,13 +192,16 @@ export function App() {
       </main>
 
       <aside className="app-panel app-results" data-active={panel === 'results'}>
-        {outcome.ok && (
+        {outcome.ok ? (
           <AssumptionsPanel
             result={outcome.result}
             form={form}
             hovered={hovered}
             boardSize={boardSize}
+            units={units}
           />
+        ) : (
+          <p className="app-empty">Zone areas and figures appear here once the building can be zoned.</p>
         )}
       </aside>
 

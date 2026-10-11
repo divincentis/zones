@@ -12,7 +12,11 @@ import {
 } from '../src/lib/project';
 import { BUILDINGS, formWith } from './fixtures';
 
-const project = (overrides = {}, boardSize: number | null = null): Project => ({ form: formWith(overrides), boardSize });
+const project = (overrides = {}, boardSize: number | null = null, units: Project['units'] = 'feetInches'): Project => ({
+  form: formWith(overrides),
+  boardSize,
+  units,
+});
 const ok = (check: ReturnType<typeof checkProject> | null): Project => {
   if (!check || !check.ok) throw new Error(check ? check.error : 'nothing read');
   return check.project;
@@ -32,6 +36,7 @@ describe('checkProject', () => {
     const read = ok(checkProject({ form: { length: 200 } }));
     expect(read.form).toEqual({ ...DEFAULT_FORM_STATE, length: 200 });
     expect(read.boardSize).toBeNull();
+    expect(read.units).toBe('feetInches');
   });
 
   it('ignores fields it does not know, so a newer file still opens', () => {
@@ -79,6 +84,7 @@ describe('checkProject', () => {
     ['a name that is not text', { form: { projectName: 42 } }, /projectName/],
     ['a zero board size', { form: {}, boardSize: 0 }, /boardSize/],
     ['a board size as text', { form: {}, boardSize: '4' }, /boardSize/],
+    ['units it has not heard of', { form: {}, units: 'metric' }, /units/],
   ];
   for (const [what, raw, pattern] of refused) {
     it(`refuses ${what}, naming what is wrong`, () => {
@@ -142,6 +148,14 @@ describe('share links', () => {
   it('keeps decimals and flags exactly', () => {
     const p = project({ eaveHeight: 22.375, stepEnabled: true, stepOffset: 12.5 }, 0.5);
     expect(ok(projectFromFragment(projectToFragment(p)))).toEqual(p);
+  });
+
+  it('carries the units only when they are not the default', () => {
+    expect(projectToFragment(project({}, null, 'feetInches'))).toBe('');
+    expect(projectToFragment(project({}, null, 'decimal'))).toBe('units=decimal');
+    expect(ok(projectFromFragment('#units=decimal')).units).toBe('decimal');
+    expect(errorOf(projectFromFragment('#units=metric'))).toMatch(/units/);
+    expect(ok(parseProject(serializeProject(project({ length: 90 }, 4, 'decimal'))))).toEqual(project({ length: 90 }, 4, 'decimal'));
   });
 
   it('takes no interest in a fragment that is not ours', () => {

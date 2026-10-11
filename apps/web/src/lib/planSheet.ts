@@ -7,6 +7,7 @@ import {
   type ZonePiece,
 } from '@zones/engine';
 import { isMonoslopeRoofResult, isSteepRoofResult, type ComputationResult } from './buildModel';
+import { formatLength, type LengthUnits } from './lengthFormat';
 import type { AnyZoneId } from './zoneColors';
 import { ZONE_LABELS } from './zoneColors';
 import type { ZoneTable } from './zoneDimensions';
@@ -313,6 +314,8 @@ export interface PlanSheetOptions {
    * everything else.
    */
   mode: 'print' | 'screen';
+  /** How the dimension strings and levels are written. */
+  units: LengthUnits;
   /**
    * Screen only: the size of the space the plan has, in sheet points. The
    * caller picks how many screen pixels a point is, which is what keeps the
@@ -405,6 +408,11 @@ function niceLength(maxFeet: number): number {
 
 export function buildPlanSheet(result: ComputationResult, options: PlanSheetOptions): PlanSheet {
   const print = options.mode === 'print';
+  // On a dimension string decimal feet go bare, as on any drawing that says
+  // "dimensions in feet"; feet and inches carry their own marks.
+  const dimText = (feet: number) =>
+    options.units === 'decimal' ? formatFeet(feet) : formatLength(feet, options.units);
+  const lengthText = (feet: number) => formatLength(feet, options.units);
   const width = print ? 792 : Math.max(300, options.page?.width ?? 640);
   const height = print ? 612 : Math.max(240, options.page?.height ?? 500);
   const margin = print ? 36 : 10;
@@ -640,7 +648,7 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
       const roomiest = labelled
         .filter((l) => l.region.elevation === elevation)
         .sort((p, q) => Math.min(q.w, q.h) - Math.min(p.w, p.h))[0];
-      const tag = `roof at ${formatFeet(elevation ?? 0)} ft`;
+      const tag = `roof at ${lengthText(elevation ?? 0)}`;
       if (!roomiest || roomiest.h < 30 || roomiest.w < estimateTextWidth(tag, DIM_SIZE) + 4) continue;
       text(roomiest.cx, roomiest.cy + 11, tag, DIM_SIZE, 'middle', 'onZone');
     }
@@ -680,7 +688,7 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
       else tick(at, stop);
     }
 
-    const labels = lengths.map((v) => formatFeet(v));
+    const labels = lengths.map(dimText);
     const lanes = assignLanes(
       labels.map((label, i) => ({
         from: along[i]!,
@@ -767,7 +775,7 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
       text(
         x0,
         y,
-        table.elevation === undefined ? table.title : `${table.title} — roof at ${formatFeet(table.elevation)} ft`,
+        table.elevation === undefined ? table.title : `${table.title} — roof at ${lengthText(table.elevation)}`,
         9,
         'start',
         'ink',
@@ -802,7 +810,18 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
         }
         y += 3;
       }
-      y += 8;
+      // Totals by surface, ruled off from the zones above them.
+      line(x0, y - 3, x1, y - 3, 0.4, 'muted');
+      for (const [label, area] of [
+        ['Roof total', table.totals.roof],
+        ['Wall total', table.totals.walls],
+      ] as const) {
+        y += 7;
+        text(x0, y, label, 8, 'start', 'ink');
+        text(x1, y, `${area.toFixed(1)} ft²`, 8, 'end', 'ink');
+        y += 3.5;
+      }
+      y += 12;
     }
     for (const note of options.notes ?? []) {
       for (const wrapped of wrapText(note, 6.5, legendWidth)) {
@@ -814,6 +833,8 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
   }
 
   // --- scale bar and footer ---
+  const dimensionNote =
+    options.units === 'decimal' ? 'Dimensions in feet.' : 'Dimensions rounded up to the whole inch.';
   const barFeet = niceLength(110 / k);
   const barY = height - margin - (print ? 12 : 8);
   const barX = margin + (print ? 0 : 4);
@@ -825,8 +846,8 @@ export function buildPlanSheet(result: ComputationResult, options: PlanSheetOpti
     barX + barFeet * k + 22,
     barY,
     feetPerInch
-      ? `Scale 1 in = ${feetPerInch} ft, printed at 100% on letter. Dimensions in feet.`
-      : 'Dimensions in feet.',
+      ? `Scale 1 in = ${feetPerInch} ft, printed at 100% on letter. ${dimensionNote}`
+      : dimensionNote,
     7,
     'start',
     'muted'

@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
-import type { ABasis, RoofType } from '@zones/engine';
+import type { RoofType } from '@zones/engine';
 import { isPlainNumber, parseFeet } from '../lib/feetInches';
+import { formatLength, type LengthUnits } from '../lib/lengthFormat';
+import { WALL_NAMES } from '../lib/terms';
 import type {
   FormState,
   MonoslopeHighSideChoice,
@@ -11,6 +13,8 @@ import type {
 interface Props {
   form: FormState;
   onChange: (form: FormState) => void;
+  units: LengthUnits;
+  onUnitsChange: (units: LengthUnits) => void;
   /** Board width (ft) to round zone widths up to for takeoff. null = off. */
   boardSize: number | null;
   onBoardSizeChange: (boardSize: number | null) => void;
@@ -33,6 +37,19 @@ const LABEL_STYLE: CSSProperties = {
 };
 
 const ROW_STYLE: CSSProperties = { marginBottom: 14 };
+
+/** The four walls in the order the plan is read, and how each is offered in a list. */
+const WALL_ORDER = ['widthNear', 'widthFar', 'lengthNear', 'lengthFar'] as const;
+const WALL_OPTION_LABELS: Record<(typeof WALL_ORDER)[number], string> = {
+  widthNear: `${capitalize(WALL_NAMES.widthNear)} on the plan`,
+  widthFar: `${capitalize(WALL_NAMES.widthFar)} on the plan`,
+  lengthNear: `${capitalize(WALL_NAMES.lengthNear)} on the plan`,
+  lengthFar: `${capitalize(WALL_NAMES.lengthFar)} on the plan`,
+};
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 const FIELD_HINT_STYLE: CSSProperties = { fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 };
 
@@ -196,7 +213,7 @@ function PitchField({ pitchDegrees, onChange }: { pitchDegrees: number; onChange
   );
 }
 
-export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: Props) {
+export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange, units, onUnitsChange }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     onChange({ ...form, [key]: value });
 
@@ -218,7 +235,7 @@ export function BuildingForm({ form, onChange, boardSize, onBoardSizeChange }: P
       <div style={ROW_STYLE}>
         <label style={LABEL_STYLE} htmlFor="field-project-name">Project name</label>
         <input
-id="field-project-name"
+          id="field-project-name"
           type="text"
           style={FIELD_STYLE}
           value={form.projectName}
@@ -255,14 +272,14 @@ id="field-project-name"
         <div style={ROW_STYLE}>
           <label style={LABEL_STYLE} htmlFor="field-roof-type">Roof type</label>
           <select
-id="field-roof-type"
+            id="field-roof-type"
             style={FIELD_STYLE}
             value={form.roofType}
             onChange={(e) => set('roofType', e.target.value as RoofType)}
           >
-            <option value="flat">Flat / low-slope (θ ≤ 7°)</option>
+            <option value="flat">Flat / low-slope</option>
             <option value="gable">Gable</option>
-            <option value="hip">Hip</option>
+            <option value="hip">Hip (7° or less only)</option>
             <option value="monoslope">Monoslope</option>
           </select>
         </div>
@@ -271,31 +288,32 @@ id="field-roof-type"
       {stepped && (
         <>
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE} htmlFor="field-attaches-to-wall">Attaches to wall</label>
+            <label style={LABEL_STYLE} htmlFor="field-attaches-to-wall">Section 2 is against the</label>
             <select
-id="field-attaches-to-wall"
+              id="field-attaches-to-wall"
               style={FIELD_STYLE}
               value={form.stepEdge}
               onChange={(e) => set('stepEdge', e.target.value as StepEdgeChoice)}
             >
-              <option value="widthFar">Width wall @ L = length</option>
-              <option value="widthNear">Width wall @ L = 0</option>
-              <option value="lengthFar">Length wall @ B = width</option>
-              <option value="lengthNear">Length wall @ B = 0</option>
+              {WALL_ORDER.map((wall) => (
+                <option key={wall} value={wall}>
+                  {WALL_OPTION_LABELS[wall]}
+                </option>
+              ))}
             </select>
           </div>
           <NumberField
-            label={`Section 2 — along shared wall (ft, max ${round2(sharedWallLength)})`}
+            label={`Section 2 — length along that wall (ft; the wall is ${round2(sharedWallLength)})`}
             value={form.stepSpan}
             onChange={(v) => set('stepSpan', v)}
           />
           <NumberField
-            label="Section 2 — offset along that wall (ft)"
+            label="Section 2 — distance from the wall's start (ft)"
             value={form.stepOffset}
             onChange={(v) => set('stepOffset', v)}
           />
           <NumberField
-            label="Section 2 — depth out from the wall (ft)"
+            label="Section 2 — depth, out from the wall (ft)"
             value={form.stepDepth}
             onChange={(v) => set('stepDepth', v)}
           />
@@ -315,17 +333,14 @@ id="field-attaches-to-wall"
             onChange={(v) => set('stepParapetHeight', v)}
           />
           <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
-            Both sections are flat / low-slope — FM 1-28 Fig. 3.2.2b/c cover &ldquo;adjoining
-            low-sloped roofs&rdquo; only, and no reviewed figure covers a pitched roof at an
-            abutment. A roof-level difference of{' '}
-            <strong>{Math.abs(form.stepEaveHeight - form.eaveHeight).toFixed(1)} ft</strong> means
-            the two are zoned as{' '}
+            The two roofs are{' '}
+            <strong>{formatLength(Math.abs(form.stepEaveHeight - form.eaveHeight), units)}</strong> apart, so they
+            are zoned as{' '}
             {Math.abs(form.stepEaveHeight - form.eaveHeight) >= 10
-              ? 'two separate roofs (Fig. 3.2.2b)'
-              : 'one roof over the combined footprint (Fig. 3.2.2c)'}
-            . The sections must actually touch: any horizontal separation, a corner-only touch, or
-            an overlap in plan is reported as an error rather than computed past. Overhangs
-            aren&apos;t modeled at an abutment.
+              ? 'two separate roofs (10 ft or more: Fig. 3.2.2b)'
+              : 'one roof over the whole footprint (under 10 ft: Fig. 3.2.2c)'}
+            . Both sections are flat: FM 1-28 has no figure for a pitched roof where sections meet. The sections
+            have to share a length of wall, and overhangs are not modeled there.
           </div>
         </>
       )}
@@ -334,23 +349,22 @@ id="field-attaches-to-wall"
         <>
           <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE} htmlFor="field-ridge-orientation">Ridge orientation</label>
+            <label style={LABEL_STYLE} htmlFor="field-ridge-orientation">Ridge runs</label>
             <select
-id="field-ridge-orientation"
+              id="field-ridge-orientation"
               style={FIELD_STYLE}
               value={form.ridgeAlong}
               onChange={(e) => set('ridgeAlong', e.target.value as RidgeAxisChoice)}
             >
-              <option value="length">Ridge runs along Length ({form.roofType} ends on the B walls)</option>
-              <option value="width">Ridge runs along Width ({form.roofType} ends on the L walls)</option>
+              <option value="length">Along the length</option>
+              <option value="width">Along the width</option>
             </select>
           </div>
           <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
-            Overhang and parapet are not yet modeled for {form.roofType} roofs, so those inputs
-            are hidden here. Pitch ≤ 7° falls back to the flat/low-slope algorithm automatically.
-            {form.roofType === 'gable'
-              ? ' Above 45° the roof is zoned as wall construction, Zones 4 and 5 (FM 1-28 §3.4.6).'
-              : ' Roof-zone geometry for hip roofs has no sourced figure yet (unlike gable — see scope doc §10.1/§10.3), so computing this building will show an error above 7°; wall zones and mean roof height are still correct.'}
+            {form.roofType === 'hip'
+              ? 'FM 1-28 has no figure for hip roofs, so one can only be zoned at 7° or less, where it is treated as low-slope.'
+              : 'At 7° or less a gable is zoned as low-slope. Above 45° it is zoned as wall construction, Zones 4 and 5 (FM 1-28 §3.4.6).'}{' '}
+            Parapets and overhangs are not modeled on pitched roofs.
           </div>
         </>
       )}
@@ -359,24 +373,24 @@ id="field-ridge-orientation"
         <>
           <PitchField pitchDegrees={form.pitchDegrees} onChange={(v) => set('pitchDegrees', v)} />
           <div style={ROW_STYLE}>
-            <label style={LABEL_STYLE} htmlFor="field-high-side">High side</label>
+            <label style={LABEL_STYLE} htmlFor="field-high-side">High side is the</label>
             <select
-id="field-high-side"
+              id="field-high-side"
               style={FIELD_STYLE}
               value={form.monoslopeHighSide}
               onChange={(e) => set('monoslopeHighSide', e.target.value as MonoslopeHighSideChoice)}
             >
-              <option value="lengthNear">High along Length @ B=0</option>
-              <option value="lengthFar">High along Length @ B=width</option>
-              <option value="widthNear">High along Width @ L=0</option>
-              <option value="widthFar">High along Width @ L=length</option>
+              {WALL_ORDER.map((wall) => (
+                <option key={wall} value={wall}>
+                  {WALL_OPTION_LABELS[wall]}
+                </option>
+              ))}
             </select>
           </div>
           <div style={{ ...NOTE_STYLE, marginBottom: 14 }}>
-            Overhang and parapet are not yet modeled for monoslope roofs, so those inputs are
-            hidden here. Pitch ≤ 3° falls back to the flat/low-slope algorithm automatically
-            (FM 1-28 §3.4.1.A). 3°–30° uses Fig. 3.4.1a/b. Above 30° is out of scope (no source
-            figure).
+            At 3° or less a monoslope is zoned as low-slope; from there to 30° it has its own figures (FM 1-28
+            Fig. 3.4.1a/b), and steeper than 30° it cannot be zoned. Parapets and overhangs are not modeled on
+            pitched roofs.
           </div>
         </>
       )}
@@ -395,7 +409,7 @@ id="field-high-side"
             checked={boardSize !== null}
             onChange={(e) => onBoardSizeChange(e.target.checked ? 4 : null)}
           />
-          <span style={{ fontSize: 12 }}>Round zone widths up to boards</span>
+          <span style={{ fontSize: 12 }}>Round roof bands up to whole boards</span>
         </label>
         {boardSize !== null && (
           <>
@@ -417,38 +431,31 @@ id="field-high-side"
                 borderRadius: 3,
               }}
             />
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ft</span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ft wide</span>
           </>
         )}
       </div>
 
-      <details style={{ ...NOTE_STYLE, marginBottom: 14 }}>
-        <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-secondary)' }}>
-          Advanced: corner-dimension basis
-        </summary>
-        <div style={{ marginTop: 8 }}>
-          <p style={{ margin: '0 0 8px' }}>
-            This building is always modeled as a rectangle, so the choices below give the exact
-            same result — they only matter for non-rectangular building shapes, which this tool
-            doesn&apos;t support yet. It&apos;s safe to leave this on the default.
-          </p>
-          <select
-            style={FIELD_STYLE}
-            value={form.aBasis}
-            onChange={(e) => set('aBasis', e.target.value as ABasis)}
-          >
-            <option value="boundingRect">Bounding rectangle (default)</option>
-            <option value="shortestEdge">Shortest edge</option>
-            <option value="perWing">Per wing</option>
-          </select>
-        </div>
-      </details>
+      <div style={ROW_STYLE}>
+        <label style={LABEL_STYLE} htmlFor="field-units">
+          Show lengths in
+        </label>
+        <select
+          id="field-units"
+          style={FIELD_STYLE}
+          value={units}
+          onChange={(e) => onUnitsChange(e.target.value as LengthUnits)}
+        >
+          <option value="feetInches">Feet and inches</option>
+          <option value="decimal">Decimal feet</option>
+        </select>
+      </div>
     </div>
   );
 }
 
 const NOTE_STYLE: CSSProperties = {
-  fontSize: 11,
+  fontSize: 12,
   color: 'var(--text-secondary)',
   background: 'var(--surface-2)',
   border: '1px solid var(--border)',

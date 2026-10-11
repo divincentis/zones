@@ -19,6 +19,7 @@ import {
   type Vec2,
   type WallZoneResult,
 } from '@zones/engine';
+import { formatLength, type LengthUnits } from './lengthFormat';
 
 export type RidgeAxisChoice = 'length' | 'width';
 export type MonoslopeHighSideChoice = 'lengthNear' | 'lengthFar' | 'widthNear' | 'widthFar';
@@ -227,18 +228,18 @@ export function isSteppedRoofResult(roof: RoofZoneResult): roof is SteppedRoofZo
 }
 
 /** Why a building falls under the low-slope figure it does, in the terms of FM 1-28 §3.2.2's height limit. */
-export function heightRegimeReason(regime: HeightRegimeResult): string {
-  const h = `h ${regime.h.toFixed(1)} ft`;
-  const ratio = `h/w = ${(regime.h / regime.w).toFixed(2)}`;
+export function heightRegimeReason(regime: HeightRegimeResult, units: LengthUnits): string {
+  const h = `h is ${formatLength(regime.h, units)}`;
+  const ratio = `h/w is ${(regime.h / regime.w).toFixed(2)}`;
   switch (regime.clause) {
     case 'h<=60':
-      return `${h} ≤ 60 ft`;
+      return `${h}, within 60 ft`;
     case 'h<90, h/w<=1':
-      return `${h} < 90 ft and ${ratio} ≤ 1`;
+      return `${h}, under 90 ft, and ${ratio}, within 1`;
     case 'h>60, h/w>1':
-      return `${h} > 60 ft and ${ratio} > 1`;
+      return `${h}, over 60 ft, and ${ratio}, over 1`;
     case 'h>=90':
-      return `${h} ≥ 90 ft`;
+      return `${h}, 90 ft or more`;
   }
 }
 
@@ -353,6 +354,55 @@ export function computeZones(form: FormState, boardSize?: number): ComputationOu
     const walls = computeWallZones(building, form.aBasis);
     return { ok: true, result: { building, roof, walls } };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: explainFailure(form, err) };
   }
+}
+
+/**
+ * Why a building could not be zoned, for the person who entered it. The
+ * engine's own messages are written for whoever is calling its functions —
+ * they open with the function's name — so the cases a form can actually
+ * reach are put in the form's terms here, each with what to change. Anything
+ * unforeseen still gets the engine's reason, minus the function name.
+ */
+export function explainFailure(form: FormState, err: unknown): string {
+  const lengths: Array<[string, number]> = [
+    ['Length', form.length],
+    ['Width', form.width],
+    ['Height', form.eaveHeight],
+    ...(form.stepEnabled
+      ? ([
+          ['Section 2 length along the wall', form.stepSpan],
+          ['Section 2 depth', form.stepDepth],
+          ['Section 2 height', form.stepEaveHeight],
+        ] as Array<[string, number]>)
+      : []),
+  ];
+  const zero = lengths.find(([, value]) => !(value > 0));
+  if (zero) return `${zero[0]} has to be more than zero.`;
+
+  if (form.stepEnabled) {
+    const wall = form.stepEdge === 'widthFar' || form.stepEdge === 'widthNear' ? form.width : form.length;
+    if (form.stepOffset >= wall) {
+      return (
+        'Section 2 has to touch the wall it attaches to. Its offset along that wall is as long as the ' +
+        'wall itself, which puts it past the end. Reduce the offset.'
+      );
+    }
+  } else {
+    const pitch = form.pitchDegrees;
+    if (form.roofType !== 'flat' && pitch >= 90) return 'A roof pitch has to be less than 90°.';
+    if (form.roofType === 'hip' && pitch > 7) {
+      return (
+        'Hip roofs steeper than 7° can\'t be zoned: FM Global 1-28 has no figure for them. ' +
+        'At 7° or less a hip roof is zoned as low-slope, or choose Gable to see a pitched roof of the same size.'
+      );
+    }
+    if (form.roofType === 'monoslope' && pitch > 30) {
+      return 'Monoslope roofs steeper than 30° can\'t be zoned: FM Global 1-28\'s figures for them stop at 30°.';
+    }
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  return message.replace(/^[A-Za-z]+: /, '');
 }

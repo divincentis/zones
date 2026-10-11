@@ -27,6 +27,8 @@ describe('buildZonePdf — builds headlessly for every kind of building', () => 
       const doc = buildZonePdf({
         result: zonesFor(overrides),
         form,
+        // Alternated, so both ways of writing a length go through the writer.
+        units: Object.keys(BUILDINGS).indexOf(name) % 2 ? 'decimal' : 'feetInches',
         view: null,
         zoneHexes: ZONE_HEX,
         lead: 'plan',
@@ -44,7 +46,7 @@ describe('buildZonePdf — builds headlessly for every kind of building', () => 
   }
 
   it('leads with the plan, landscape, when exported from the plan view', () => {
-    const doc = buildZonePdf({ result: zonesFor(), form: formWith(), view: null, zoneHexes: ZONE_HEX, lead: 'plan', version: 'test' });
+    const doc = buildZonePdf({ result: zonesFor(), form: formWith(), units: 'feetInches', view: null, zoneHexes: ZONE_HEX, lead: 'plan', version: 'test' });
     doc.setPage(1);
     expect(doc.internal.pageSize.getWidth()).toBeCloseTo(792);
     doc.setPage(2);
@@ -52,7 +54,7 @@ describe('buildZonePdf — builds headlessly for every kind of building', () => 
   });
 
   it('leads with the report, portrait, when exported from the 3D view, and ends on the plan', () => {
-    const doc = buildZonePdf({ result: zonesFor(), form: formWith(), view: null, zoneHexes: ZONE_HEX, lead: 'view', version: 'test' });
+    const doc = buildZonePdf({ result: zonesFor(), form: formWith(), units: 'feetInches', view: null, zoneHexes: ZONE_HEX, lead: 'view', version: 'test' });
     doc.setPage(1);
     expect(doc.internal.pageSize.getWidth()).toBeCloseTo(612);
     doc.setPage(doc.getNumberOfPages());

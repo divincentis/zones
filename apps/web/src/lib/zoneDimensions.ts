@@ -7,8 +7,9 @@ import {
   zoneSurfaceArea,
   type ComputationResult,
 } from './buildModel';
+import { formatLength, type LengthUnits } from './lengthFormat';
 import { steppedSections, type SteppedSection } from './steppedSections';
-import type { AnyZoneId } from './zoneColors';
+import { ZONE_LABELS, type AnyZoneId } from './zoneColors';
 
 /**
  * One figure in a zone's row of the "Zone areas" table: what it measures,
@@ -32,7 +33,7 @@ export interface ZoneDimension {
   value: string;
 }
 
-export const fmt = (n: number) => `${n.toFixed(2)} ft`;
+export const fmt = (n: number, units: LengthUnits) => formatLength(n, units);
 
 /** Rounds n up to the next multiple of boardSize, e.g. for board-coverage takeoff. */
 export const roundUpToBoard = (n: number, boardSize: number) => Math.ceil(n / boardSize) * boardSize;
@@ -43,11 +44,9 @@ export const roundUpToBoard = (n: number, boardSize: number) => Math.ceil(n / bo
  * is what actually gets ordered and built — it's shown as the primary
  * figure, with the exact figure kept alongside as the minimum it must cover.
  */
-export const fmtWidth = (n: number, boardSize?: number) => {
-  if (!boardSize || boardSize <= 0) return fmt(n);
-  const rounded = roundUpToBoard(n, boardSize);
-  const roundedStr = Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
-  return `${roundedStr} ft (min ${fmt(n)})`;
+export const fmtWidth = (n: number, boardSize: number | undefined, units: LengthUnits) => {
+  if (!boardSize || boardSize <= 0) return fmt(n, units);
+  return `${fmt(roundUpToBoard(n, boardSize), units)} (min ${fmt(n, units)})`;
 };
 
 /**
@@ -60,11 +59,9 @@ export const fmtWidth = (n: number, boardSize?: number) => {
  * and disagree with the actual geometry, so this must match the engine's
  * per-side-then-double order, not double-then-round.
  */
-export const fmtDoubledWidth = (perSide: number, boardSize?: number) => {
-  if (!boardSize || boardSize <= 0) return fmt(2 * perSide);
-  const rounded = 2 * roundUpToBoard(perSide, boardSize);
-  const roundedStr = Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(2);
-  return `${roundedStr} ft (min ${fmt(2 * perSide)})`;
+export const fmtDoubledWidth = (perSide: number, boardSize: number | undefined, units: LengthUnits) => {
+  if (!boardSize || boardSize <= 0) return fmt(2 * perSide, units);
+  return `${fmt(2 * roundUpToBoard(perSide, boardSize), units)} (min ${fmt(2 * perSide, units)})`;
 };
 
 /**
@@ -102,6 +99,11 @@ export interface ZoneTable {
   elevation?: number;
   /** How the areas were measured, when that isn't the obvious way — set for a pitched roof. */
   areaNote?: string;
+  /**
+   * Roof and wall area in all, by the surface it is on rather than by zone:
+   * a gable over 45° carries wall zones on its roof, and those are roof.
+   */
+  totals: { roof: number; walls: number };
   zones: ZoneTableEntry[];
 }
 
@@ -113,11 +115,15 @@ const ZONE_ORDER: AnyZoneId[] = ["1'", '1', '2', '3', '4', '5'];
  * its "(lower)"/"(upper)" qualifier — the heading carries it — and it matches
  * how the work is actually ordered, per roof rather than per building.
  */
-export function computeZoneTables(result: ComputationResult, boardSize?: number): ZoneTable[] {
+export function computeZoneTables(
+  result: ComputationResult,
+  boardSize: number | undefined,
+  units: LengthUnits
+): ZoneTable[] {
   const sections = steppedSections(result);
   if (sections.length === 0) {
-    const dims = roofZoneDimensions(result, boardSize);
-    addWallDimensions(dims, result.walls);
+    const dims = roofZoneDimensions(result, boardSize, units);
+    addWallDimensions(dims, result.walls, units);
     const slope = roofSlopeFactor(result.roof);
     return [
       {
@@ -130,23 +136,51 @@ export function computeZoneTables(result: ComputationResult, boardSize?: number)
             ? `Roof areas are measured on the slope (plan area × ${slope.toFixed(3)}); band widths are plan dimensions.`
             : undefined,
         zones: zoneEntries(dims, (zoneId) => zoneSurfaceArea(result, zoneId)),
+        totals: {
+          roof: slope * result.roof.pieces.reduce((sum, p) => sum + p.area, 0),
+          walls: result.walls.pieces.reduce((sum, p) => sum + p.area, 0),
+        },
       },
     ];
   }
 
   const upperWalls = result.step!.upperWalls;
   return sections.map((section) => {
-    const dims = steppedZoneDimensions(section, boardSize);
+    const dims = steppedZoneDimensions(section, boardSize, units);
     const walls = section.role === 'upper' ? upperWalls : result.walls;
-    addWallDimensions(dims, walls);
+    addWallDimensions(dims, walls, units);
     const area = (zoneId: AnyZoneId) =>
       isWallZone(zoneId) ? sumArea(walls.pieces, zoneId) : (section.extents[zoneId]?.area ?? 0);
     return {
       title: section.role === 'upper' ? 'Upper roof' : 'Lower roof',
       elevation: section.elevation,
       zones: zoneEntries(dims, area),
+      totals: {
+        roof: Object.values(section.extents).reduce((sum, extent) => sum + (extent?.area ?? 0), 0),
+        walls: walls.pieces.reduce((sum, p) => sum + p.area, 0),
+      },
     };
   });
+}
+
+/**
+ * The tables as tab-separated text — what a spreadsheet or an estimate takes
+ * on paste. One row per zone, then one per figure under it, with the table's
+ * totals after; a stepped building's levels follow one another.
+ */
+export function tablesToTsv(tables: ZoneTable[]): string {
+  const rows: string[][] = [];
+  for (const table of tables) {
+    if (rows.length) rows.push([]);
+    rows.push([table.title, 'Area (sq ft)', 'Figure', 'Basis', 'Value']);
+    for (const entry of table.zones) {
+      rows.push([ZONE_LABELS[entry.zoneId], entry.area.toFixed(1)]);
+      for (const row of entry.rows) rows.push(['', '', row.label, row.formula ?? '', row.value]);
+    }
+    rows.push(['Roof total', table.totals.roof.toFixed(1)]);
+    rows.push(['Wall total', table.totals.walls.toFixed(1)]);
+  }
+  return rows.map((row) => row.join('\t')).join('\n') + '\n';
 }
 
 const isWallZone = (zoneId: AnyZoneId) => zoneId === '4' || zoneId === '5';
@@ -167,7 +201,8 @@ function zoneEntries(
 /** Roof zones of a whole (non-stepped) building — computeZoneTables adds the wall zones. */
 function roofZoneDimensions(
   result: ComputationResult,
-  boardSize?: number
+  boardSize: number | undefined,
+  units: LengthUnits
 ): Partial<Record<AnyZoneId, ZoneDimension[]>> {
   const { roof } = result;
   const out: Partial<Record<AnyZoneId, ZoneDimension[]>> = {};
@@ -181,18 +216,18 @@ function roofZoneDimensions(
       {
         label: roof.pitchBand === '3-10' ? 'Low side' : 'Wrap band',
         formula: 'a',
-        value: fmtWidth(roof.lowBand, boardSize),
+        value: fmtWidth(roof.lowBand, boardSize, units),
       },
-      { label: 'High side', formula: '2a', value: fmtWidth(roof.highBand, boardSize) },
+      { label: 'High side', formula: '2a', value: fmtWidth(roof.highBand, boardSize, units) },
     ];
     out['3'] = [
-      { label: 'High corner', formula: '4a', value: fmtWidth(roof.highCornerBand, boardSize) },
+      { label: 'High corner', formula: '4a', value: fmtWidth(roof.highCornerBand, boardSize, units) },
       ...(roof.pitchBand === '3-10'
         ? [
             {
               label: 'Low corner (square)',
               formula: '2a',
-              value: fmtWidth(roof.lowCornerBand, boardSize),
+              value: fmtWidth(roof.lowCornerBand, boardSize, units),
             },
           ]
         : []),
@@ -205,24 +240,24 @@ function roofZoneDimensions(
     // addWallDimensions), so only the peak band needs figures of its own —
     // both of them, since it is set out as a drop but covers a plan run.
     out['5'] = [
-      { label: 'Peak band, vertical', formula: 'a', value: fmt(roof.ridgeBandDrop ?? 0) },
-      { label: 'Peak band, in plan', formula: 'a / tan θ', value: fmt(roof.ridgeOrEaveBand) },
+      { label: 'Peak band, vertical', formula: 'a', value: fmt(roof.ridgeBandDrop ?? 0, units) },
+      { label: 'Peak band, in plan', formula: 'a / tan θ', value: fmt(roof.ridgeOrEaveBand, units) },
     ];
     return out;
   }
 
   if (isSteepRoofResult(roof)) {
-    out['2'] = [{ label: 'Depth from rake', formula: 'a', value: fmtWidth(roof.rakeBand, boardSize) }];
+    out['2'] = [{ label: 'Depth from rake', formula: 'a', value: fmtWidth(roof.rakeBand, boardSize, units) }];
     out['3'] =
       roof.pitchBand === '7-27'
         ? [
             {
               label: 'Width (straddles ridge)',
               formula: '2a',
-              value: fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize),
+              value: fmtDoubledWidth(roof.ridgeOrEaveBand, boardSize, units),
             },
           ]
-        : [{ label: 'Width from eave', formula: 'a', value: fmtWidth(roof.ridgeOrEaveBand, boardSize) }];
+        : [{ label: 'Width from eave', formula: 'a', value: fmtWidth(roof.ridgeOrEaveBand, boardSize, units) }];
     return out;
   }
 
@@ -234,13 +269,13 @@ function roofZoneDimensions(
     const bandForField = boardSize ? Math.min(roundUpToBoard(roof.a, boardSize), roof.roofWidth / 2) : band;
     if (roof.pieces.some((p) => p.zoneId === '3')) {
       out['3'] = [
-        { label: 'Leg width', formula: 'a', value: fmtWidth(band, boardSize) },
-        { label: 'Leg length', formula: '2a', value: fmtWidth(leg, boardSize) },
+        { label: 'Leg width', formula: 'a', value: fmtWidth(band, boardSize, units) },
+        { label: 'Leg length', formula: '2a', value: fmtWidth(leg, boardSize, units) },
       ];
     }
     if (roof.pieces.some((p) => p.zoneId === '1')) {
-      out['2'] = [{ label: 'Width', formula: 'a', value: fmtWidth(band, boardSize) }];
-      out['1'] = [{ label: 'Width', formula: 'B - 2a', value: fmt(Math.max(0, roof.roofWidth - 2 * bandForField)) }];
+      out['2'] = [{ label: 'Width', formula: 'a', value: fmtWidth(band, boardSize, units) }];
+      out['1'] = [{ label: 'Width', formula: 'B - 2a', value: fmt(Math.max(0, roof.roofWidth - 2 * bandForField), units) }];
     }
     return out;
   }
@@ -273,12 +308,12 @@ function roofZoneDimensions(
 
   if (zone3Exists) {
     out['3'] = [
-      { label: 'Leg width', formula: '0.2h', value: fmtWidth(legW, boardSize) },
-      { label: 'Leg length', formula: '0.6h', value: fmtWidth(dEdgeX, boardSize) },
+      { label: 'Leg width', formula: '0.2h', value: fmtWidth(legW, boardSize, units) },
+      { label: 'Leg length', formula: '0.6h', value: fmtWidth(dEdgeX, boardSize, units) },
     ];
   }
   if (zone1Exists) {
-    out['2'] = [{ label: 'Width', formula: '0.6h', value: fmtWidth(dEdgeY, boardSize) }];
+    out['2'] = [{ label: 'Width', formula: '0.6h', value: fmtWidth(dEdgeY, boardSize, units) }];
     // With a Zone 1' beyond it, Zone 1 is the ring band between the 0.6h and
     // 1.2h lines rather than the whole inner residual — mirroring the pair of
     // call-outs RoofDimensions draws for that case.
@@ -287,14 +322,14 @@ function roofZoneDimensions(
           {
             label: 'Width',
             formula: '1.2h - 0.6h',
-            value: fmt(Math.max(0, dIntY - dEdgeYForInterior)),
+            value: fmt(Math.max(0, dIntY - dEdgeYForInterior), units),
           },
         ]
-      : [{ label: 'Width', formula: 'B - 2(0.6h)', value: fmt(zone1Width) }];
+      : [{ label: 'Width', formula: 'B - 2(0.6h)', value: fmt(zone1Width, units) }];
     if (roof.hasZone1Prime) {
       out["1'"] = [
-        { label: 'Width', formula: 'B - 2(1.2h)', value: fmt(zone1PrimeWidth) },
-        { label: 'Length', formula: 'L - 2(1.2h)', value: fmt(zone1PrimeLength) },
+        { label: 'Width', formula: 'B - 2(1.2h)', value: fmt(zone1PrimeWidth, units) },
+        { label: 'Length', formula: 'L - 2(1.2h)', value: fmt(zone1PrimeLength, units) },
       ];
     }
   }
@@ -313,7 +348,8 @@ function roofZoneDimensions(
  */
 function steppedZoneDimensions(
   section: SteppedSection,
-  boardSize?: number
+  boardSize: number | undefined,
+  units: LengthUnits
 ): Partial<Record<AnyZoneId, ZoneDimension[]>> {
   const { region, extents } = section;
   const out: Partial<Record<AnyZoneId, ZoneDimension[]>> = {};
@@ -325,11 +361,11 @@ function steppedZoneDimensions(
   // dimensions instead (see steppedRoofZones.ts), so the multipliers differ.
   const tall = region.regime.regime === 'tall';
   if (extents['2']) {
-    push('2', { label: 'Width', formula: tall ? 'a' : '0.6h', value: fmtWidth(region.dEdge, boardSize) });
+    push('2', { label: 'Width', formula: tall ? 'a' : '0.6h', value: fmtWidth(region.dEdge, boardSize, units) });
   }
   if (extents['3']) {
-    push('3', { label: 'Leg width', formula: tall ? 'a' : '0.2h', value: fmtWidth(region.legWidth, boardSize) });
-    push('3', { label: 'Leg length', formula: tall ? '2a' : '0.6h', value: fmtWidth(region.legLength, boardSize) });
+    push('3', { label: 'Leg width', formula: tall ? 'a' : '0.2h', value: fmtWidth(region.legWidth, boardSize, units) });
+    push('3', { label: 'Leg length', formula: tall ? '2a' : '0.6h', value: fmtWidth(region.legLength, boardSize, units) });
   }
 
   const zone1 = extents['1'];
@@ -338,14 +374,14 @@ function steppedZoneDimensions(
     // Zone 1 is the ring between the 0.6h and 1.2h lines here — a band
     // figure, like Zone 2's, not an extent.
     const band = Math.max(0, roundIfBoard(region.dInterior, boardSize) - roundIfBoard(region.dEdge, boardSize));
-    push('1', { label: 'Width', formula: '1.2h - 0.6h', value: fmt(band) });
+    push('1', { label: 'Width', formula: '1.2h - 0.6h', value: fmt(band, units) });
   } else if (zone1?.rectangular) {
-    push('1', { label: 'Width', value: fmt(zone1.width) });
-    push('1', { label: 'Length', value: fmt(zone1.length) });
+    push('1', { label: 'Width', value: fmt(zone1.width, units) });
+    push('1', { label: 'Length', value: fmt(zone1.length, units) });
   }
   if (zone1Prime?.rectangular) {
-    push("1'", { label: 'Width', value: fmt(zone1Prime.width) });
-    push("1'", { label: 'Length', value: fmt(zone1Prime.length) });
+    push("1'", { label: 'Width', value: fmt(zone1Prime.width, units) });
+    push("1'", { label: 'Length', value: fmt(zone1Prime.length, units) });
   }
   return out;
 }
@@ -364,9 +400,10 @@ const roundIfBoard = (n: number, boardSize?: number) =>
  */
 function addWallDimensions(
   out: Partial<Record<AnyZoneId, ZoneDimension[]>>,
-  walls: ComputationResult['walls']
+  walls: ComputationResult['walls'],
+  units: LengthUnits
 ): void {
   if (walls.pieces.some((p) => p.zoneId === '5')) {
-    (out['5'] ??= []).push({ label: 'Width', formula: 'a', value: fmt(walls.a.a) });
+    (out['5'] ??= []).push({ label: 'Width', formula: 'a', value: fmt(walls.a.a, units) });
   }
 }
