@@ -358,3 +358,14 @@ The 2D view was the piece rectangles the engine happened to produce, filled, wit
 **Found while doing it:** jsPDF's built-in Helvetica has no `≤`, `≥` or `θ`, and silently prints the wrong glyph. §10.9's new parameter lines and table rows used all three, so the report page shipped in `2026-10-11.2` shows a stray character in those places. Every string bound for the PDF now goes through `pdfText.ts`. The report's parameter lines are also wrapped; several ran off the right-hand edge.
 
 **Tests:** `apps/web` now has its own suite (`npm test` at the root runs both). It builds the whole PDF headlessly for one of each kind of building; set `ZONES_PDF_DUMP=<dir>` to keep those files and look at them.
+
+### 10.11 Update — 2026-10-10: The layout follows the screen
+
+The app was a fixed three-column grid (280 px, the view, 260 px) at every width, so on a phone the view had no width at all.
+
+- **Three layouts, chosen by the stylesheet alone** (`theme.css`, "Layout"): three columns from 1000 px; from 640 px the zones panel moves under the view so the view keeps its width; below that, one panel at a time from a tab bar — Building, View, Zones. Tabs rather than one long scrolling page because a page that scrolls fights the 3D view for every drag. `App.tsx` marks one panel active at every width and never asks how wide the screen is; the inactive panels are hidden, not unmounted, so the 3D scene and the angle it was turned to survive a change of tab.
+- **Touch.** A finger does not hover, so a tap on a zone now counts as pointing at it (a drag to turn the model does not). On a phone, where the panel that describes the zone is on another tab, the view shows the zone and its area in a strip along the bottom until it is dismissed.
+- **Portrait screens.** The 3D camera stands further back in proportion, since its field of view is fixed vertically and a portrait viewport sees less from side to side. Landscape is untouched, so resizing a desktop window never resets the view.
+- **Smaller things:** fields are 16 px on a phone (Safari zooms the page into anything smaller), number fields ask for the decimal keypad and their labels are tied to them, and the app fills the visible viewport (`100dvh`) rather than the one behind the browser's toolbars.
+
+Checked in headless Chromium at 375 × 812, 820 × 1180 and 1400 × 850. Not checked on a physical phone.

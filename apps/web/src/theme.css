@@ -85,6 +85,21 @@ body,
   margin: 0;
 }
 
+/* The app is one screenful and scrolls inside its panels, never as a page:
+   a page that scrolled would fight the 3D view for every drag. On a phone
+   "one screenful" has to mean what is visible with the browser's bars
+   showing, which is the dynamic viewport and not 100%. */
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+@supports (height: 100dvh) {
+  #root {
+    height: 100dvh;
+  }
+}
+
 body {
   background: var(--surface-0);
   color: var(--text-primary);
@@ -116,4 +131,158 @@ button {
   color: var(--border);
   margin: 0 7px;
   font-weight: 400;
+}
+
+/* ---- Layout ----------------------------------------------------------------
+   Three panels: the building's inputs, the view, and the zones' figures.
+
+     wide     inputs | view | results      as many columns as there are panels
+     medium   inputs | view                the results move under the view, so
+                     | results             the view keeps its width
+     narrow   one panel at a time, chosen from a tab bar
+
+   App.tsx marks one panel active at every width; only the narrow layout does
+   anything with that. The view is hidden with display rather than unmounted,
+   so switching tabs does not throw away the 3D scene or where it was turned. */
+.app {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 260px;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+.app-inputs,
+.app-results {
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--surface-1);
+}
+
+.app-inputs {
+  border-right: 1px solid var(--border);
+}
+
+.app-results {
+  border-left: 1px solid var(--border);
+}
+
+.app-view {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+
+.app-error {
+  max-width: 480px;
+  /* Clear of the view buttons, which sit over the top-left corner. */
+  padding: 56px 24px 24px;
+  color: var(--zone-1);
+}
+
+.app-tabs,
+.zone-chip {
+  display: none;
+}
+
+@media (max-width: 999px) {
+  .app {
+    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .app-inputs {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .app-view {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .app-results {
+    grid-column: 2;
+    grid-row: 2;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 639px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .app-panel {
+    grid-column: 1;
+    grid-row: 1;
+    border: none;
+  }
+
+  .app-panel:not([data-active='true']) {
+    display: none;
+  }
+
+  .app-tabs {
+    display: flex;
+    grid-column: 1;
+    grid-row: 2;
+    border-top: 1px solid var(--border);
+    background: var(--surface-1);
+    /* Clear of the home indicator on a phone with no home button. */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .app-tab {
+    flex: 1;
+    min-height: 48px;
+    border: none;
+    border-top: 2px solid transparent;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .app-tab[aria-pressed='true'] {
+    border-top-color: var(--accent);
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  /* What the zones panel would say about the zone under the pointer, for a
+     screen where that panel is on another tab and the pointer is a finger. */
+  .zone-chip {
+    display: block;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1;
+    padding: 10px 36px 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  }
+
+  .zone-chip-close {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+  }
+
+  /* Mobile Safari zooms the page into any field whose text is under 16px. */
+  input,
+  select,
+  button {
+    font-size: 16px;
+  }
 }
