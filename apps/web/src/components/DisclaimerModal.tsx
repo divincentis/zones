@@ -38,7 +38,8 @@ export function DisclaimerModal({ onAcknowledge }: DisclaimerModalProps) {
         </h2>
         <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
           This tool renders an approximate graphical representation of wind zone geometry based on
-          ASCE 7-22. It does not calculate wind pressures, does not account for every building
+          the zone figures in FM Global Property Loss Prevention Data Sheet 1-28, Wind Design. It
+          does not calculate wind pressures, does not account for every building
           configuration, exception, or local amendment, and its output has not been independently
           verified.
         </p>

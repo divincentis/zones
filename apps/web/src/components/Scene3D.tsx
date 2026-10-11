@@ -16,16 +16,16 @@ import {
   isMonoslopeRoofResult,
   isSteepRoofResult,
   isSteppedRoofResult,
+  isTallRoofResult,
+  zoneSurfaceArea,
   type ComputationResult,
 } from '../lib/buildModel';
 import type { AnyZoneId } from '../lib/zoneColors';
 import { useZoneColors } from '../lib/zoneColors';
 import { describeRoofHover, describeWallHover, type HoverInfo } from '../lib/hoverInfo';
 import {
-  gableEndTriangle,
   gableRoofHeight,
   gableRoofPieceCorners,
-  monoslopeRoofHeight,
   monoslopeRoofPieceCorners,
   planToWorld,
   roofPieceCorners,
@@ -80,10 +80,6 @@ const DIM_PRIORITY = {
 // Multiplier on the camera's default distance from the building, so the
 // initial framing sits back from the model a bit rather than crowding it.
 const CAMERA_DISTANCE_SCALE = 1.2;
-
-function sumPieceArea(pieces: { zoneId: string; area: number }[], zoneId: string): number {
-  return pieces.filter((p) => p.zoneId === zoneId).reduce((s, p) => s + p.area, 0);
-}
 
 /**
  * Canvas's `camera={{ position }}` shorthand only applies once, at creation
@@ -168,8 +164,10 @@ function FacingTracker({ center, onChange }: { center: Vec3; onChange: (facing: 
 }
 
 /**
- * Roof zone widths — Zone 3 leg (0.2h), Zone 2/3 edge band (0.6h), Zone 1
- * interior boundary (1.2h). Drawn inside the roof plan (on the actual zone
+ * Roof zone widths for the two low-slope figures, which share one layout and
+ * differ only in their numbers: Fig. 3.2.2a (Zone 3 leg 0.2h thick and 0.6h
+ * long, Zone 2 band 0.6h, Zone 1 boundary 1.2h) and, on a tall building,
+ * Fig. 3.2.2f (leg a thick and 2a long, band a, no Zone 1'). Drawn inside the roof plan (on the actual zone
  * they measure) rather than floating outside the building footprint, so
  * each dimension reads next to the zone it describes. The leg dimension
  * only applies when Zone 3 actually exists — a parapet >= 3 ft credits the
@@ -197,22 +195,31 @@ function RoofDimensions({
   const roofMinY = Math.min(...roofYs);
   const roofMaxY = Math.max(...roofYs);
 
+  const tall = isTallRoofResult(roof);
+  const band = tall ? roof.a : roof.dEdge;
+  const legLength = tall ? roof.cornerLeg : roof.dEdge;
+  const legThickness = tall ? roof.a : roof.legWidth;
+  const interior = tall ? 0 : roof.dInterior;
+  const hasZone1Prime = !tall && roof.hasZone1Prime;
+
   // Exact (unrounded) clamped distances — used only as the "(min ...)"
   // figure inside fmtWidth's label text, never for a line position or a
   // residual, so board-rounding can't leak into them the wrong way.
-  const dEdgeXExact = Math.min(roof.dEdge, (roofMaxX - roofMinX) / 2);
-  const dEdgeYExact = Math.min(roof.dEdge, (roofMaxY - roofMinY) / 2);
-  const legWExact = Math.min(roof.legWidth, dEdgeXExact, dEdgeYExact);
+  const dEdgeXExact = Math.min(band, (roofMaxX - roofMinX) / 2);
+  const dEdgeYExact = Math.min(band, (roofMaxY - roofMinY) / 2);
+  const legLenXExact = Math.min(legLength, (roofMaxX - roofMinX) / 2);
+  const legWExact = Math.min(legThickness, dEdgeXExact, dEdgeYExact);
 
   // Board-rounded (when boardSize is set) clamped distances — these drive
   // every dimension LINE's position and the Zone 1/1' residual, so the
   // call-outs stay aligned with the actual (also board-rounded) 3D pieces.
   const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
-  const dEdgeX = Math.min(round(roof.dEdge), (roofMaxX - roofMinX) / 2);
-  const dEdgeY = Math.min(round(roof.dEdge), (roofMaxY - roofMinY) / 2);
-  const legW = Math.min(round(roof.legWidth), dEdgeX, dEdgeY);
-  const dIntX = Math.min(round(roof.dInterior), (roofMaxX - roofMinX) / 2);
-  const dIntY = Math.min(round(roof.dInterior), (roofMaxY - roofMinY) / 2);
+  const dEdgeX = Math.min(round(band), (roofMaxX - roofMinX) / 2);
+  const dEdgeY = Math.min(round(band), (roofMaxY - roofMinY) / 2);
+  const legLenX = Math.min(round(legLength), (roofMaxX - roofMinX) / 2);
+  const legW = Math.min(round(legThickness), dEdgeX, dEdgeY);
+  const dIntX = Math.min(round(interior), (roofMaxX - roofMinX) / 2);
+  const dIntY = Math.min(round(interior), (roofMaxY - roofMinY) / 2);
   // When Zone 1' exists, it's a rectangular field beyond both 1.2h interior
   // boundaries — a plan shape, not a band, so a foreman needs both its
   // length and width to lay it out (they aren't equal unless the roof is
@@ -259,7 +266,7 @@ function RoofDimensions({
   // Zone 1) instead of outside the building.
   const gap = Math.max(2, maxSpan * 0.03);
   const clampX = (x: number) =>
-    Math.min(Math.max(x, roofMinX + dEdgeX + gap * 0.3), roofMaxX - dEdgeX - gap * 0.3);
+    Math.min(Math.max(x, roofMinX + legLenX + gap * 0.3), roofMaxX - legLenX - gap * 0.3);
   const midX = (roofMinX + roofMaxX) / 2;
   const bandX = clampX(midX - gap / 2);
   const interiorX = clampX(midX + gap / 2);
@@ -292,8 +299,8 @@ function RoofDimensions({
           />
           <DimensionLine
             from={at(nearX, nearY - dirY * legLenOutset)}
-            to={at(nearX + dirX * dEdgeX, nearY - dirY * legLenOutset)}
-            label={`Zone 3 leg L = ${fmtWidth(dEdgeXExact, boardSize ?? undefined)}`}
+            to={at(nearX + dirX * legLenX, nearY - dirY * legLenOutset)}
+            label={`Zone 3 leg L = ${fmtWidth(legLenXExact, boardSize ?? undefined)}`}
             color={AMBER}
             priority={DIM_PRIORITY.zone3}
             retreat
@@ -311,7 +318,7 @@ function RoofDimensions({
         />
       )}
       {zone1Exists &&
-        (roof.hasZone1Prime ? (
+        (hasZone1Prime ? (
           <>
             {/* Zone 1 is the ring between the two inset lines here, so its
                 dimension continues straight on from the Zone 2 band in the
@@ -374,7 +381,11 @@ function SteepRoofDimensions({
   // Board-rounded band distances drive line positions (matching the actual,
   // also-rounded 3D pieces); fmtWidth is still given the exact roof.*Band
   // value for its own "(min ...)" figure.
-  const round = (n: number) => (boardSize ? roundUpToBoard(n, boardSize) : n);
+  // Above 45° the roof is wall construction and nothing is board-rounded
+  // (see steepRoofZones.ts), so its call-outs stay exact too.
+  const asWall = roof.pitchBand === '45+';
+  const boards = asWall ? undefined : (boardSize ?? undefined);
+  const round = (n: number) => (boards ? roundUpToBoard(n, boards) : n);
   const rakeBand = round(roof.rakeBand);
   const ridgeOrEaveBand = round(roof.ridgeOrEaveBand);
 
@@ -411,16 +422,32 @@ function SteepRoofDimensions({
   // the ridge centerline, not the a-from-corner span the old single dimension
   // showed (which measured empty Zone 2 near the corner, not Zone 3 at all).
   const ridgeCenter = perpExtent / 2;
+  const peakHeight = gableRoofHeight(
+    building.roof.ridgeLine,
+    building.roof.pitchDegrees,
+    building.eaveHeight,
+    perpExtent,
+    toWorld(0, ridgeCenter)
+  );
 
   return (
     <group>
       <DimensionLine
         from={at(0, gap)}
         to={at(rakeBand, gap)}
-        label={`Zone 2/3 (rake) = ${fmtWidth(roof.rakeBand, boardSize ?? undefined)}`}
+        label={`${asWall ? 'Zone 5' : 'Zone 2/3'} (rake) = ${fmtWidth(roof.rakeBand, boards)}`}
         color={AMBER}
       />
-      {roof.pitchBand === '7-27' ? (
+      {asWall ? (
+        // Fig. 3.4.6a dimensions the peak band as a vertical drop, so it is
+        // drawn as one: straight down the gable end from the peak.
+        <DimensionLine
+          from={planToWorld(toWorld(0, ridgeCenter), peakHeight)}
+          to={planToWorld(toWorld(0, ridgeCenter), peakHeight - (roof.ridgeBandDrop ?? 0))}
+          label={`Zone 5 (peak) = ${fmt(roof.ridgeBandDrop ?? 0)}`}
+          color={BLUE}
+        />
+      ) : roof.pitchBand === '7-27' ? (
         <DimensionLine
           from={at(gap2, ridgeCenter - ridgeOrEaveBand)}
           to={at(gap2, ridgeCenter + ridgeOrEaveBand)}
@@ -693,134 +720,6 @@ function SteppedRoofDimensions({
         }
         color={RED}
       />
-    </group>
-  );
-}
-
-/**
- * Monoslope envelope infill: the engine's wall zones (unchanged from the
- * rectangular-footprint formula) use a flat `eaveHeight` for all four
- * walls, but a real monoslope building's high-edge wall is taller and its
- * two side walls slope diagonally to meet it. Not wind-zone data — plain
- * neutral fill, purely so the 3D view doesn't show through to the roof
- * underside at the high edge. See scope doc §10.5.
- */
-function MonoslopeEnvelopeInfill({ building }: { building: ComputationResult['building'] }) {
-  const highEdge = building.roof.highEdge;
-  if (building.roofType !== 'monoslope' || !highEdge) return null;
-  const { frame, slopeAxis, highSide, span } = resolveMonoslopeGeometry(building);
-  const highTop = monoslopeRoofHeight(
-    frame,
-    slopeAxis,
-    highSide,
-    building.roof.pitchDegrees,
-    building.eaveHeight,
-    span,
-    highEdge[0]
-  );
-  const n = building.vertices.length;
-
-  const isHighEdge = (s: Vec2, e: Vec2) => {
-    const matches = (p: Vec2, q: Vec2) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
-    return (matches(s, highEdge[0]) && matches(e, highEdge[1])) || (matches(s, highEdge[1]) && matches(e, highEdge[0]));
-  };
-
-  const highRect: Vec3[] = [];
-  const sideTriangles: Vec3[][] = [];
-  for (let i = 0; i < n; i++) {
-    const s = building.vertices[i]!;
-    const e = building.vertices[(i + 1) % n]!;
-    if (isHighEdge(s, e)) {
-      highRect.push(
-        planToWorld(s, building.eaveHeight),
-        planToWorld(e, building.eaveHeight),
-        planToWorld(e, highTop),
-        planToWorld(s, highTop)
-      );
-      continue;
-    }
-    const len = Math.hypot(e[0] - s[0], e[1] - s[1]);
-    if (Math.abs(len - span) > 0.05) continue; // ridge-parallel (low) edge, not a side wall
-    // Orient the triangle so its apex sits at whichever endpoint is nearer the high edge.
-    const distToHigh = (p: Vec2) =>
-      Math.min(Math.hypot(p[0] - highEdge[0][0], p[1] - highEdge[0][1]), Math.hypot(p[0] - highEdge[1][0], p[1] - highEdge[1][1]));
-    const [low, high] = distToHigh(s) < distToHigh(e) ? [e, s] : [s, e];
-    sideTriangles.push(gableEndTriangle(low, high, building.eaveHeight, high, highTop));
-  }
-
-  return (
-    <group>
-      {highRect.length === 4 && <EnvelopeMesh corners={highRect} />}
-      {sideTriangles.map((corners, i) => (
-        <EnvelopeMesh key={i} corners={corners} />
-      ))}
-    </group>
-  );
-}
-
-/** Cosmetic envelope-fill mesh (gable-end / monoslope infill) — a triangle (3 corners) or a planar quad (4, split 0-1-2/0-2-3), always in the same flat neutral gray with no hover interaction. */
-function EnvelopeMesh({ corners }: { corners: Vec3[] }) {
-  const geometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(corners.flat());
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setIndex(corners.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2]);
-    geo.computeVertexNormals();
-    return geo;
-  }, [corners]);
-
-  return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial color="#8a8a8a" side={THREE.DoubleSide} />
-    </mesh>
-  );
-}
-
-/**
- * Gable-end wall infill: the triangular envelope between the flat-topped
- * wall zone mesh (rectangular, up to eaveHeight — matching the engine's
- * wall-zone geometry exactly) and the sloped roof surface above it. Not a
- * wind zone — no engine data backs it, so it's rendered in a plain neutral
- * color with no hover interaction, purely so gable ends don't show through
- * to the roof underside.
- */
-function GableEndInfill({ building }: { building: ComputationResult['building'] }) {
-  const ridgeLine = building.roof.ridgeLine;
-  // At <=7° the roof itself renders flat (computeLowSlopeRoofZones takes
-  // over), so a pitched gable-end cap here would rise above a roof surface
-  // that isn't actually pitched. Skip it to match.
-  if (building.roofType !== 'gable' || !ridgeLine || building.roof.pitchDegrees <= 7) return null;
-  const { perpExtent } = resolveRidgeGeometry(building);
-  const n = building.vertices.length;
-
-  const triangles: { start: Vec2; end: Vec2; apex: Vec2 }[] = [];
-  for (let i = 0; i < n; i++) {
-    const s = building.vertices[i]!;
-    const e = building.vertices[(i + 1) % n]!;
-    const len = Math.hypot(e[0] - s[0], e[1] - s[1]);
-    if (Math.abs(len - perpExtent) > 0.05) continue; // eave wall, not a rake (gable-end) wall
-    const mid: Vec2 = [(s[0] + e[0]) / 2, (s[1] + e[1]) / 2];
-    const apex = ridgeLine.reduce((closest, p) =>
-      Math.hypot(p[0] - mid[0], p[1] - mid[1]) < Math.hypot(closest[0] - mid[0], closest[1] - mid[1])
-        ? p
-        : closest
-    );
-    triangles.push({ start: s, end: e, apex });
-  }
-
-  return (
-    <group>
-      {triangles.map((t, i) => {
-        const apexHeight = gableRoofHeight(
-          ridgeLine,
-          building.roof.pitchDegrees,
-          building.eaveHeight,
-          perpExtent,
-          t.apex
-        );
-        const corners = gableEndTriangle(t.start, t.end, building.eaveHeight, t.apex, apexHeight);
-        return <EnvelopeMesh key={i} corners={corners} />;
-      })}
     </group>
   );
 }
@@ -1187,7 +1086,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
             color={colors[zoneId] ?? '#999'}
             hovered={isHovered}
             onHoverStart={() =>
-              onHover(describeRoofHover(zoneId, sumPieceArea(roof.pieces, zoneId), roof))
+              onHover(describeRoofHover(zoneId, zoneSurfaceArea(result, zoneId), roof))
             }
             onHoverEnd={() => onHover(null)}
           />
@@ -1221,7 +1120,7 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
                 onHover(
                   describeWallHover(
                     zoneId,
-                    sumPieceArea(walls.pieces, zoneId) + (step ? sumPieceArea(step.upperWalls.pieces, zoneId) : 0),
+                    zoneSurfaceArea(result, zoneId),
                     section.walls,
                     step ? (s === 0 ? 'lower section' : 'upper section') : undefined
                   )
@@ -1232,9 +1131,6 @@ export function Scene3D({ result, onHover, hovered, onCanvasReady, boardSize }: 
           );
         })
       )}
-
-      <GableEndInfill building={building} />
-      <MonoslopeEnvelopeInfill building={building} />
 
       <LabelCollisionProvider>
         {isSteep ? (

@@ -8,6 +8,7 @@ import {
   type RectFrame,
 } from './geometry.js';
 import { meanRoofHeight } from './meanRoofHeight.js';
+import { classifyHeightRegime, type HeightRegimeResult } from './heightRegime.js';
 import { roundUpToBoard, type ZonePiece } from './zoneTypes.js';
 
 /**
@@ -91,6 +92,16 @@ import { roundUpToBoard, type ZonePiece } from './zoneTypes.js';
  *    for `hBasis` on the result; the UI reports it.
  *  - `h` in the separate (>=10 ft) case is each section's own — they are two
  *    buildings at that point, so each gets its own mean roof height.
+ *  - TALL sections. Fig. 3.2.2b/c are drawn with Fig. 3.2.2a's h-based
+ *    dimensions, which stop applying above 60 ft (or 90 ft at h/w <= 1) —
+ *    see heightRegime.ts — and Fig. 3.2.2f, the tall-building figure, shows
+ *    no abutting case. A podium and tower is too ordinary a building to
+ *    refuse, so a region over the limit keeps this module's free-boundary
+ *    rule and takes its DIMENSIONS from Fig. 3.2.2f instead (Zone 2 width a,
+ *    Zone 3 an L of 2a x 2a x a, no Zone 1'). That is an extrapolation the
+ *    source does not draw: each region reports its `regime` so the UI can
+ *    say so. For a tower with every edge free it reduces exactly to
+ *    computeTallRoofZones, which the test suite asserts.
  *  - Zone 1' in the combined case needs a least horizontal dimension for a
  *    non-rectangular (union) footprint, which is scope §4.3's known
  *    ambiguity. It goes through the same `aBasis` the rest of the app uses,
@@ -123,9 +134,12 @@ export interface SteppedRegionSummary {
   /** 'combined' covers both sections as one roof (Fig. 3.2.2c). */
   role: 'lower' | 'upper' | 'combined';
   h: number;
-  dEdge: number; // 0.6h — Zone 2/3 band depth and Zone 3 leg length
-  dInterior: number; // 1.2h — Zone 1 / 1' boundary
-  legWidth: number; // 0.2h — Zone 3 leg thickness
+  /** Which figure's dimensions this region is laid out with — Fig. 3.2.2a's (lowRise) or Fig. 3.2.2f's (tall). */
+  regime: HeightRegimeResult;
+  dEdge: number; // Zone 2 band depth — 0.6h, or a when tall
+  legLength: number; // Zone 3 leg length — 0.6h, or 2a when tall
+  legWidth: number; // Zone 3 leg thickness — 0.2h, or a when tall
+  dInterior: number; // 1.2h — Zone 1 / 1' boundary (not used when tall: Fig. 3.2.2f has no Zone 1')
   wideThreshold: number; // 2.4h
   lMin: number;
   hasZone1Prime: boolean;
@@ -244,9 +258,22 @@ interface RegionOutput {
 
 function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput {
   const { rects, h } = region;
-  const dEdge = 0.6 * h;
+  // The outline, and so the lesser plan dimension, depends only on the
+  // rects — and it has to be known first, because it decides which figure's
+  // dimensions the grid below is built from.
+  const outlineLocal = traceRectsOutline(rects);
+  const lMin = leastHorizontalDimension(
+    outlineLocal.map((p) => localToWorld(frame, p[0], p[1])),
+    region.aBasis
+  );
+  const regime = classifyHeightRegime(h, lMin);
+  const tall = regime.regime === 'tall';
+  // Table 3.2.2f note 1: a = 10% of the lesser plan dimension, >= 3 ft.
+  const aTall = Math.max(0.1 * lMin, 3);
+  const dEdge = tall ? aTall : 0.6 * h;
+  const legLength = tall ? 2 * aTall : 0.6 * h;
+  const legWidth = tall ? aTall : 0.2 * h;
   const dInterior = 1.2 * h;
-  const legWidth = 0.2 * h;
   const wideThreshold = 2.4 * h;
 
   // Board-rounded distances drive the actual piece geometry below when
@@ -255,6 +282,7 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
   // and what wideThreshold/hasZone1Prime are computed from.
   const round = (n: number) => (region.boardSize ? roundUpToBoard(n, region.boardSize) : n);
   const dEdgeGeom = round(dEdge);
+  const legLengthGeom = round(legLength);
   const dInteriorGeom = round(dInterior);
   const legWidthGeom = round(legWidth);
 
@@ -263,7 +291,7 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
   const yLo = Math.min(...rects.map((r) => r.rect.y0));
   const yHi = Math.max(...rects.map((r) => r.rect.y1));
 
-  const offsets = [0, legWidthGeom, dEdgeGeom, dInteriorGeom];
+  const offsets = [0, legWidthGeom, dEdgeGeom, legLengthGeom, ...(tall ? [] : [dInteriorGeom])];
   const xs = buildAxisCoords(
     [...rects.flatMap((r) => [r.rect.x0, r.rect.x1]), ...region.extraX],
     offsets,
@@ -307,22 +335,20 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
     );
   };
 
-  // Boundary edges, walked CCW (region interior on the left) so they can be
-  // chained into the outline; the free ones also drive the band distance.
+  // Boundary edges of the gridded region; the free ones drive the band
+  // distance.
   const freeSegs: Seg[] = [];
-  const directed: Array<{ from: [number, number]; to: [number, number] }> = [];
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < ny; j++) {
       if (!inside(i, j)) continue;
       const [x0, x1, y0, y1] = [xs[i]!, xs[i + 1]!, ys[j]!, ys[j + 1]!];
-      const visit = (seg: Seg, from: [number, number], to: [number, number]) => {
-        directed.push({ from, to });
+      const visit = (seg: Seg) => {
         if (!isSheltered(seg)) freeSegs.push(seg);
       };
-      if (!inside(i, j - 1)) visit({ horizontal: true, c: y0, t0: x0, t1: x1 }, [x0, y0], [x1, y0]);
-      if (!inside(i + 1, j)) visit({ horizontal: false, c: x1, t0: y0, t1: y1 }, [x1, y0], [x1, y1]);
-      if (!inside(i, j + 1)) visit({ horizontal: true, c: y1, t0: x0, t1: x1 }, [x1, y1], [x0, y1]);
-      if (!inside(i - 1, j)) visit({ horizontal: false, c: x0, t0: y0, t1: y1 }, [x0, y1], [x0, y0]);
+      if (!inside(i, j - 1)) visit({ horizontal: true, c: y0, t0: x0, t1: x1 });
+      if (!inside(i + 1, j)) visit({ horizontal: false, c: x1, t0: y0, t1: y1 });
+      if (!inside(i, j + 1)) visit({ horizontal: true, c: y1, t0: x0, t1: x1 });
+      if (!inside(i - 1, j)) visit({ horizontal: false, c: x0, t0: y0, t1: y1 });
     }
   }
 
@@ -358,18 +384,13 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
     }
   }
 
-  const outlineLocal = traceOutline(directed);
-  const lMin = leastHorizontalDimension(
-    outlineLocal.map((p) => localToWorld(frame, p[0], p[1])),
-    region.aBasis
-  );
-  const hasZone1Prime = lMin > wideThreshold;
+  const hasZone1Prime = !tall && lMin > wideThreshold;
 
   const inZone3 = (px: number, py: number) =>
     corners.some((c) => {
       const a = c.sx * (px - c.x);
       const b = c.sy * (py - c.y);
-      if (a <= 0 || b <= 0 || a >= dEdgeGeom || b >= dEdgeGeom) return false;
+      if (a <= 0 || b <= 0 || a >= legLengthGeom || b >= legLengthGeom) return false;
       return a < legWidthGeom || b < legWidthGeom;
     });
 
@@ -401,7 +422,18 @@ function computeRegionZones(frame: RectFrame, region: RegionInput): RegionOutput
 
   return {
     pieces,
-    summary: { role: region.role, h, dEdge, dInterior, legWidth, wideThreshold, lMin, hasZone1Prime },
+    summary: {
+      role: region.role,
+      h,
+      regime,
+      dEdge,
+      legLength,
+      legWidth,
+      dInterior,
+      wideThreshold,
+      lMin,
+      hasZone1Prime,
+    },
     outline: outlineLocal,
   };
 }
@@ -465,9 +497,9 @@ function mergeCells(
 
 /**
  * Outer boundary of a set of axis-aligned rects, CCW, in the local frame.
- * Same cell-walk as the zoning pass but on the bare rect edges — used for
- * reporting the combined footprint in the separate ('two roofs') treatment,
- * where no combined zoning pass runs.
+ * A cell-walk on the bare rect edges: every region is measured on it, and
+ * it also reports the combined footprint in the separate ('two roofs')
+ * treatment, where no combined zoning pass runs.
  */
 function traceRectsOutline(rects: RegionRect[]): Array<[number, number]> {
   const xs = dedupeSorted(rects.flatMap((r) => [r.rect.x0, r.rect.x1]));

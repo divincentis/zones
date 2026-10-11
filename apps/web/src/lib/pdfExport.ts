@@ -1,8 +1,11 @@
 import { jsPDF } from 'jspdf';
 import {
+  heightRegimeReason,
   isMonoslopeRoofResult,
   isSteepRoofResult,
   isSteppedRoofResult,
+  isTallRoofResult,
+  pitchBandLabel,
   type ComputationResult,
   type FormState,
 } from './buildModel';
@@ -134,8 +137,11 @@ export function exportZonePdf(
         }`,
         ...roof.regions.map(
           (r) =>
-            `${r.role} roof: h = ${r.h.toFixed(2)} ft, Zone 2 band 0.6h = ${r.dEdge.toFixed(2)} ft, Zone 3 leg 0.2h = ${r.legWidth.toFixed(2)} ft, ` +
-            `Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (L_min ${r.lMin.toFixed(1)} ft vs 2.4h = ${r.wideThreshold.toFixed(2)} ft)`
+            r.regime.regime === 'tall'
+              ? `${r.role} roof: h = ${r.h.toFixed(2)} ft, over Fig. 3.2.2a's height limit — Fig. 3.2.2f dimensions by extrapolation: ` +
+                `Zone 2 band a = ${r.dEdge.toFixed(2)} ft, Zone 3 legs 2a = ${r.legLength.toFixed(2)} ft by a, no Zone 1'`
+              : `${r.role} roof: h = ${r.h.toFixed(2)} ft, Zone 2 band 0.6h = ${r.dEdge.toFixed(2)} ft, Zone 3 leg 0.2h = ${r.legWidth.toFixed(2)} ft, ` +
+                `Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (L_min ${r.lMin.toFixed(1)} ft vs 2.4h = ${r.wideThreshold.toFixed(2)} ft)`
         ),
         `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft lower / ${result.step!.upperWalls.a.a.toFixed(2)} ft upper`,
         roof.hBasis === 'tallerSection'
@@ -150,23 +156,41 @@ export function exportZonePdf(
     ? [
         `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (monoslope, high side: ${form.monoslopeHighSide})`,
         `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
-        `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
+        `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${pitchBandLabel(roof.pitchBand)} (${roof.source})`,
         `High band/corner: ${roof.highBand.toFixed(2)}/${roof.highCornerBand.toFixed(2)} ft   ${roof.pitchBand === '3-10' ? `Low band/corner: ${roof.lowBand.toFixed(2)}/${roof.lowCornerBand.toFixed(2)} ft` : `Wrap band: ${roof.lowBand.toFixed(2)} ft`}`,
-        'Overhang and parapet are not yet modeled for monoslope roofs; wall zones use a uniform height on all four walls.',
+        'Overhang and parapet are not yet modeled for monoslope roofs. Walls are built up to the roof: the high wall and sloped side walls are in the Zone 4/5 areas.',
       ]
     : isSteepRoofResult(roof)
       ? [
           `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft, roof pitch ${form.pitchDegrees}° (gable, ridge along ${form.ridgeAlong})`,
           `a basis: ${form.aBasis}   a (wall + roof bands): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
-          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${roof.pitchBand}° (${roof.source})`,
-          `Rake band: ${roof.rakeBand.toFixed(2)} ft   ${roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band: ${roof.ridgeOrEaveBand.toFixed(2)} ft`,
-          'Overhang and parapet are not yet modeled for gable roofs.',
-        ]
+          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   Pitch band: ${pitchBandLabel(roof.pitchBand)} (${roof.source})`,
+          roof.pitchBand === '45+'
+            ? `Rake band: ${roof.rakeBand.toFixed(2)} ft   Peak band: ${(roof.ridgeBandDrop ?? 0).toFixed(2)} ft vertical drop (${roof.ridgeOrEaveBand.toFixed(2)} ft in plan each side of the ridge)`
+            : `Rake band: ${roof.rakeBand.toFixed(2)} ft   ${roof.pitchBand === '7-27' ? 'Ridge' : 'Eave'} band: ${roof.ridgeOrEaveBand.toFixed(2)} ft`,
+          roof.pitchBand === '45+'
+            ? 'Above 45 degrees the roof is zoned as wall construction (FM 1-28 section 3.4.6): its slopes carry Zones 4 and 5. The peak band is taken as a vertical drop of a.'
+            : undefined,
+          'Overhang and parapet are not yet modeled for gable roofs. Gable-end walls run up to the rake and are in the Zone 4/5 areas.',
+        ].filter((line): line is string => line !== undefined)
+      : isTallRoofResult(roof)
+      ? [
+          `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft`,
+          `Parapet height: ${form.parapetHeight} ft   Overhang depth: ${form.overhangDepth} ft`,
+          `Tall building (${heightRegimeReason(roof.regime)}): roof zones per Fig. 3.2.2f, not the h-based Fig. 3.2.2a.`,
+          `a (roof zones): ${roof.a.toFixed(2)} ft — ${roof.aGoverningBranch}   Zone 2 band a, Zone 3 legs 2a = ${roof.cornerLeg.toFixed(2)} ft by a. No Zone 1'.`,
+          `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}   L_min: ${result.walls.a.lMin.toFixed(2)} ft`,
+          roof.parapetCreditsCorners
+            ? 'Parapet >= 3 ft on the full perimeter: Zone 3 corners credited to Zone 2 (FM 1-28 Table 3.2.2f, note 2).'
+            : form.parapetHeight > 0
+              ? 'Parapet below 3 ft: no Zone 3-to-Zone 2 corner credit (FM 1-28 Table 3.2.2f, note 2).'
+              : undefined,
+        ].filter((line): line is string => line !== undefined)
       : [
           `Footprint: ${form.length} ft x ${form.width} ft, height ${form.eaveHeight} ft`,
           `Parapet height: ${form.parapetHeight} ft   Overhang depth: ${form.overhangDepth} ft`,
           `a basis: ${form.aBasis}   a (wall zones): ${result.walls.a.a.toFixed(2)} ft — ${result.walls.a.governingBranch}`,
-          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   h (roof mean height): ${roof.h.toFixed(2)} ft`,
+          `L_min: ${result.walls.a.lMin.toFixed(2)} ft   h (roof mean height): ${roof.h.toFixed(2)} ft (${heightRegimeReason(roof.regime)}: Fig. 3.2.2a applies)`,
           `Zone 1': ${roof.hasZone1Prime ? 'applies' : 'does not apply'} (threshold L_min > 2.4h = ${roof.wideThreshold.toFixed(2)} ft)`,
           roof.parapetCreditsCorners
             ? "Parapet >= 3 ft on the full perimeter: Zone 3 corners credited to Zone 2 (FM 1-28 Table 3.2.2a, note 2)."
@@ -206,6 +230,14 @@ export function exportZonePdf(
     );
     y += 16;
     doc.setFontSize(9);
+    if (table.areaNote) {
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(table.areaNote, margin, y);
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      y += 14;
+    }
     if (boardSize && boardSize > 0) {
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
@@ -248,8 +280,8 @@ export function exportZonePdf(
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    `Sources: roof zones — ${isMonoslopeRoofResult(roof) || isSteepRoofResult(roof) || isSteppedRoofResult(roof) ? roof.source : 'FM Global 1-28 Fig 3.2.2a'}. ` +
-      'Wall zones — a-parameter formula. See project scope doc Addendum §10.',
+    `Sources: roof zones — ${roof.source}. Wall zones — ${result.walls.source}` +
+      `${result.step && result.step.upperWalls.source !== result.walls.source ? ` (lower), ${result.step.upperWalls.source} (upper)` : ''}.`,
     margin,
     y,
     { maxWidth: pageWidth - margin * 2 }

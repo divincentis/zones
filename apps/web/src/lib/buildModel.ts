@@ -4,14 +4,18 @@ import {
   computeSteepRoofZones,
   computeSteppedRoofZones,
   computeSteppedWallZones,
+  computeTallRoofZones,
   computeWallZones,
+  heightRegime,
   type ABasis,
   type FootprintNode,
+  type HeightRegimeResult,
   type LowSlopeRoofZoneResult,
   type MonoslopeRoofZoneResult,
   type RoofType,
   type SteepRoofZoneResult,
   type SteppedRoofZoneResult,
+  type TallRoofZoneResult,
   type Vec2,
   type WallZoneResult,
 } from '@zones/engine';
@@ -205,6 +209,7 @@ export function buildStepSection(form: FormState): FootprintNode {
 
 export type RoofZoneResult =
   | LowSlopeRoofZoneResult
+  | TallRoofZoneResult
   | SteepRoofZoneResult
   | MonoslopeRoofZoneResult
   | SteppedRoofZoneResult;
@@ -221,6 +226,40 @@ export function isSteppedRoofResult(roof: RoofZoneResult): roof is SteppedRoofZo
   return 'treatment' in roof;
 }
 
+/** Why a building falls under the low-slope figure it does, in the terms of FM 1-28 §3.2.2's height limit. */
+export function heightRegimeReason(regime: HeightRegimeResult): string {
+  const h = `h ${regime.h.toFixed(1)} ft`;
+  const ratio = `h/w = ${(regime.h / regime.w).toFixed(2)}`;
+  switch (regime.clause) {
+    case 'h<=60':
+      return `${h} ≤ 60 ft`;
+    case 'h<90, h/w<=1':
+      return `${h} < 90 ft and ${ratio} ≤ 1`;
+    case 'h>60, h/w>1':
+      return `${h} > 60 ft and ${ratio} > 1`;
+    case 'h>=90':
+      return `${h} ≥ 90 ft`;
+  }
+}
+
+/** A steep-roof pitch band as prose: '7-27°', or 'over 45°' for the open-ended one. */
+export function pitchBandLabel(band: string): string {
+  return band === '45+' ? 'over 45°' : `${band}°`;
+}
+
+export function isTallRoofResult(roof: RoofZoneResult): roof is TallRoofZoneResult {
+  return 'cornerLeg' in roof;
+}
+
+/**
+ * Plan area × this = area on the roof surface. Roof pieces carry plan areas
+ * (zones are laid out in plan), which on a pitched roof understates what
+ * actually gets covered — by 6% at 20°, 41% at 45°.
+ */
+export function roofSlopeFactor(roof: RoofZoneResult): number {
+  return isSteepRoofResult(roof) || isMonoslopeRoofResult(roof) ? roof.slopeFactor : 1;
+}
+
 export interface StepResult {
   /** The taller section. `building` on the result is always the lower one. */
   upper: FootprintNode;
@@ -235,6 +274,22 @@ export interface ComputationResult {
   roof: RoofZoneResult;
   walls: WallZoneResult;
   step?: StepResult;
+}
+
+/**
+ * One zone's total area across the whole building, each piece measured on the
+ * surface it lies on. Sums roof and walls together because a zone id is not
+ * confined to one of them: a gable steeper than 45° is zoned as wall
+ * construction, so its roof slopes carry Zones 4 and 5 too.
+ */
+export function zoneSurfaceArea(result: ComputationResult, zoneId: string): number {
+  const sum = (pieces: Array<{ zoneId: string; area: number }>) =>
+    pieces.filter((p) => p.zoneId === zoneId).reduce((total, p) => total + p.area, 0);
+  return (
+    roofSlopeFactor(result.roof) * sum(result.roof.pieces) +
+    sum(result.walls.pieces) +
+    (result.step ? sum(result.step.upperWalls.pieces) : 0)
+  );
 }
 
 export type ComputationOutcome =
@@ -278,20 +333,22 @@ export function computeZones(form: FormState, boardSize?: number): ComputationOu
     }
 
     const pitch = building.roof.pitchDegrees;
+    // Which low-slope figure applies turns on height, not just slope: Fig.
+    // 3.2.2a stops at 60 ft (90 ft where h/w <= 1) and Fig. 3.2.2f takes over.
+    const lowSlope = (): RoofZoneResult =>
+      heightRegime(building, form.aBasis).regime === 'tall'
+        ? computeTallRoofZones(building, form.aBasis, boardSize)
+        : computeLowSlopeRoofZones(building, form.aBasis, boardSize);
     let roof: RoofZoneResult;
     if (building.roofType === 'monoslope') {
       // §3.4.1.A: monoslope ≤3° is treated the same as low-slope gable;
       // 3°-30° uses its own figures (Fig 3.4.1a/b) — a narrower low-slope
       // cutoff than gable/hip's 7°.
       roof =
-        pitch <= 3
-          ? computeLowSlopeRoofZones(building, form.aBasis, boardSize)
-          : computeMonoslopeRoofZones(building, form.aBasis, boardSize);
+        pitch <= 3 ? lowSlope() : computeMonoslopeRoofZones(building, form.aBasis, boardSize);
     } else {
       roof =
-        pitch <= 7
-          ? computeLowSlopeRoofZones(building, form.aBasis, boardSize)
-          : computeSteepRoofZones(building, form.aBasis, boardSize);
+        pitch <= 7 ? lowSlope() : computeSteepRoofZones(building, form.aBasis, boardSize);
     }
     const walls = computeWallZones(building, form.aBasis);
     return { ok: true, result: { building, roof, walls } };

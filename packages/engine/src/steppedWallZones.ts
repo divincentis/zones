@@ -1,15 +1,14 @@
 import type { ABasis, FootprintNode, Vec2 } from './types.js';
 import { distance } from './geometry.js';
-import { computeWallZones, type WallZonePiece, type WallZoneResult } from './wallZones.js';
+import { computeWallZones, sliceWallPiece, wallPiece, type WallZonePiece, type WallZoneResult } from './wallZones.js';
 
 /**
  * Wall zones for a stepped (abutting) building.
  *
  * The Zone 4/5 rule itself is untouched — each section runs through
- * computeWallZones on its own footprint with its own `a` (see wallZones.ts;
- * FM 1-28 does not cover wall zones, so this stays on the scope §4.2
- * `a`-parameter formulation). What this module adds is the one thing a
- * stepped building makes wrong about that output: the shared wall.
+ * computeWallZones on its own footprint with its own `a` (see wallZones.ts,
+ * FM 1-28 Fig. 3.2.2e/f). What this module adds is the one thing a stepped
+ * building makes wrong about that output: the shared wall.
  *
  *  - The LOWER section's abutting wall is buried behind the taller section
  *    for its whole height. It is not a wind-exposed surface at all, so its
@@ -78,10 +77,6 @@ function locateAbutment(
   return null;
 }
 
-function withArea(piece: Omit<WallZonePiece, 'area'>): WallZonePiece {
-  return { ...piece, area: (piece.alongMax - piece.alongMin) * (piece.heightMax - piece.heightMin) };
-}
-
 /**
  * Splits every piece on `edgeIndex` at the abutment's ends, then applies
  * `insideBase` to the stretch that is actually shared: `null` drops it (fully
@@ -110,14 +105,19 @@ function trimAbuttingWall(
 
     for (const span of spans) {
       if (span.max - span.min <= TOLERANCE_FT) continue;
+      const slice = sliceWallPiece(piece, span.min, span.max);
       if (!span.shared) {
-        out.push(withArea({ ...piece, alongMin: span.min, alongMax: span.max }));
+        out.push(slice);
         continue;
       }
       if (insideBase === null) continue;
-      const heightMin = Math.max(piece.heightMin, insideBase);
-      if (piece.heightMax - heightMin <= TOLERANCE_FT) continue;
-      out.push(withArea({ ...piece, alongMin: span.min, alongMax: span.max, heightMin }));
+      const raised = wallPiece({
+        ...slice,
+        baseAtMin: Math.max(slice.baseAtMin, insideBase),
+        baseAtMax: Math.max(slice.baseAtMax, insideBase),
+      });
+      if (raised.heightMax - raised.heightMin <= TOLERANCE_FT) continue;
+      out.push(raised);
     }
   }
 

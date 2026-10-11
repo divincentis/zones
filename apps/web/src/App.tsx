@@ -35,7 +35,13 @@ export function App() {
           background: 'var(--surface-1)',
         }}
       >
-        <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>Wind Zone Visualizer</h1>
+        <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>
+          <a href="/" className="brand-link">
+            zbCAD
+          </a>
+          <span className="brand-sep">/</span>
+          Wind Zone Visualizer
+        </h1>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 4px', opacity: 0.7 }}>
           v{APP_VERSION}
         </div>

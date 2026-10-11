@@ -1,6 +1,6 @@
 import type { AnyZoneId } from './zoneColors';
 import type { ComputationResult } from './buildModel';
-import { isMonoslopeRoofResult, isSteepRoofResult, isSteppedRoofResult } from './buildModel';
+import { isMonoslopeRoofResult, isSteepRoofResult, isSteppedRoofResult, isTallRoofResult, pitchBandLabel } from './buildModel';
 
 export interface HoverInfo {
   zoneId: AnyZoneId;
@@ -16,7 +16,7 @@ export function describeRoofHover(
 ): HoverInfo {
   if (isMonoslopeRoofResult(roof)) {
     const parts = [
-      `pitch band ${roof.pitchBand}°`,
+      `pitch band ${pitchBandLabel(roof.pitchBand)}`,
       `a = ${roof.a.a.toFixed(2)} ft (${roof.a.governingBranch}, basis: ${roof.a.aBasis})`,
     ];
     if (zoneId === '3') {
@@ -35,10 +35,18 @@ export function describeRoofHover(
 
   if (isSteepRoofResult(roof)) {
     const parts = [
-      `pitch band ${roof.pitchBand}°`,
+      `pitch band ${pitchBandLabel(roof.pitchBand)}`,
       `a = ${roof.a.a.toFixed(2)} ft (${roof.a.governingBranch}, basis: ${roof.a.aBasis})`,
     ];
-    if (zoneId === '3') {
+    if (roof.pitchBand === '45+') {
+      parts.push('above 45° the roof is zoned as wall construction (FM 1-28 §3.4.6)');
+      if (zoneId === '5') {
+        parts.push(
+          `strip up each rake = a = ${roof.rakeBand.toFixed(2)} ft; band at the peak = a vertical drop of ` +
+            `${(roof.ridgeBandDrop ?? 0).toFixed(2)} ft (${roof.ridgeOrEaveBand.toFixed(2)} ft in plan each side of the ridge)`
+        );
+      }
+    } else if (zoneId === '3') {
       parts.push(
         roof.pitchBand === '7-27'
           ? `ridge band = a = ${roof.ridgeOrEaveBand.toFixed(2)} ft x rake band = a = ${roof.rakeBand.toFixed(2)} ft (ridge x rake overlap)`
@@ -59,7 +67,10 @@ export function describeRoofHover(
     ];
     parts.push(
       roof.regions
-        .map((r) => `${r.role} h = ${r.h.toFixed(2)} ft (0.6h = ${r.dEdge.toFixed(2)} ft)`)
+        .map(
+          (r) =>
+            `${r.role} h = ${r.h.toFixed(2)} ft (${r.regime.regime === 'tall' ? 'tall: band a' : '0.6h'} = ${r.dEdge.toFixed(2)} ft)`
+        )
         .join('; ')
     );
     if (zoneId === '2' && roof.parapetCreditsCorners) {
@@ -70,7 +81,9 @@ export function describeRoofHover(
         roof.regions
           .map(
             (r) =>
-              `${r.role}: Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (Lmin ${r.lMin.toFixed(1)} vs 2.4h = ${r.wideThreshold.toFixed(1)} ft)`
+              r.regime.regime === 'tall'
+                ? `${r.role}: no Zone 1' on a tall roof (Fig. 3.2.2f)`
+                : `${r.role}: Zone 1' ${r.hasZone1Prime ? 'applies' : 'does not apply'} (Lmin ${r.lMin.toFixed(1)} vs 2.4h = ${r.wideThreshold.toFixed(1)} ft)`
           )
           .join('; ')
       );
@@ -78,6 +91,23 @@ export function describeRoofHover(
     if (roof.hBasis === 'tallerSection') {
       parts.push("combined-roof h taken from the taller section (conservative — the figure doesn't say)");
     }
+    parts.push(roof.source);
+    return { zoneId, source: 'roof', area, note: parts.join(' · ') };
+  }
+
+  if (isTallRoofResult(roof)) {
+    const parts = [
+      `h = ${roof.regime.h.toFixed(2)} ft — tall building (${roof.regime.clause})`,
+      `a = ${roof.a.toFixed(2)} ft (${roof.aGoverningBranch})`,
+    ];
+    if (zoneId === '2') parts.push(`band width = a = ${roof.a.toFixed(2)} ft`);
+    if (zoneId === '3') {
+      parts.push(`L-shaped corner, legs 2a = ${roof.cornerLeg.toFixed(2)} ft long by a = ${roof.a.toFixed(2)} ft thick`);
+    }
+    if (zoneId === '2' && roof.parapetCreditsCorners) {
+      parts.push('includes corner areas credited from Zone 3 (parapet >= 3 ft, Table 3.2.2f note 2)');
+    }
+    if (zoneId === '1') parts.push("everything inside the band — this figure has no Zone 1'");
     parts.push(roof.source);
     return { zoneId, source: 'roof', area, note: parts.join(' · ') };
   }
@@ -107,7 +137,7 @@ export function describeWallHover(
   /** Which section's wall this is — set for stepped buildings, where each section has its own `a`. */
   sectionLabel?: string
 ): HoverInfo {
-  const a = `a = ${walls.a.a.toFixed(2)} ft (${walls.a.governingBranch}, basis: ${walls.a.aBasis})`;
+  const a = `a = ${walls.a.a.toFixed(2)} ft (${walls.a.governingBranch}, basis: ${walls.a.aBasis}) · ${walls.source}`;
   return {
     zoneId,
     source: 'wall',

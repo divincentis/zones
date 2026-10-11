@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeLowSlopeRoofZones } from '../src/lowSlopeRoofZones.js';
+import { computeTallRoofZones } from '../src/tallRoofZones.js';
 import {
   computeSteppedRoofZones,
   STEP_SEPARATE_TREATMENT_THRESHOLD_FT,
@@ -170,6 +171,87 @@ describe('computeSteppedRoofZones — reduces to Fig. 3.2.2a for a free-standing
         ).toBeCloseTo(sumArea(ref.pieces, zoneId), 6);
       }
     }
+  });
+});
+
+describe('computeSteppedRoofZones — a tall section takes Fig. 3.2.2f’s dimensions', () => {
+  // Podium and tower: a 100 x 80 podium at 20 ft with a 60 x 80 tower at
+  // 120 ft against it. The tower is over Fig. 3.2.2a's height limit, so its
+  // region is laid out with Fig. 3.2.2f's a-based dimensions; the podium is
+  // not, and keeps 0.6h. With every edge free the tower must agree with
+  // computeTallRoofZones zone for zone — the same guard as the block above.
+  const stepped = computeSteppedRoofZones(fullWidthStep(20, 120), 'boundingRect');
+  const reference = computeTallRoofZones(
+    flatRoofBuilding({ length: 60, width: 80, eaveHeight: 120 }),
+    'boundingRect'
+  );
+  const upperRegion = stepped.regions.find((r) => r.role === 'upper')!;
+  const lowerRegion = stepped.regions.find((r) => r.role === 'lower')!;
+
+  it('each region reports the regime its own height puts it in', () => {
+    expect(upperRegion.regime.regime).toBe('tall');
+    expect(lowerRegion.regime.regime).toBe('lowRise');
+  });
+
+  it('the tower matches Fig. 3.2.2f areas for every zone', () => {
+    const upperPieces = stepped.pieces.filter((p) => p.elevation === 120);
+    for (const zoneId of ['1', "1'", '2', '3']) {
+      expect(sumArea(upperPieces, zoneId), `zone ${zoneId}`).toBeCloseTo(sumArea(reference.pieces, zoneId), 6);
+    }
+  });
+
+  it('the tower matches Fig. 3.2.2f dimensions: band a, legs 2a by a, no Zone 1\'', () => {
+    expect(upperRegion.dEdge).toBeCloseTo(reference.a);
+    expect(upperRegion.legLength).toBeCloseTo(reference.cornerLeg);
+    expect(upperRegion.legWidth).toBeCloseTo(reference.a);
+    expect(upperRegion.hasZone1Prime).toBe(false);
+  });
+
+  it('the podium keeps Fig. 3.2.2a: band and leg length both 0.6h', () => {
+    expect(lowerRegion.dEdge).toBeCloseTo(12);
+    expect(lowerRegion.legLength).toBeCloseTo(12);
+    expect(lowerRegion.legWidth).toBeCloseTo(4);
+  });
+
+  it('holds across proportions, including a slender tower on the 3 ft floor', () => {
+    const shapes = [
+      { length: 40, width: 40, eave: 95 },
+      { length: 200, width: 150, eave: 100 },
+      { length: 20, width: 18, eave: 70 }, // 60-90 ft, tall because h/w > 1
+      { length: 10, width: 10, eave: 100 }, // legs collide past the centerline
+    ];
+    for (const shape of shapes) {
+      const ref = computeTallRoofZones(
+        flatRoofBuilding({ length: shape.length, width: shape.width, eaveHeight: shape.eave }),
+        'boundingRect'
+      );
+      const step = computeSteppedRoofZones(
+        [
+          flatRoofSection({ id: 'lower', x: -100, y: 0, length: 100, width: shape.width, eaveHeight: 1 }),
+          flatRoofSection({ id: 'upper', x: 0, y: 0, length: shape.length, width: shape.width, eaveHeight: shape.eave }),
+        ],
+        'boundingRect'
+      );
+      const pieces = step.pieces.filter((p) => p.elevation === shape.eave);
+      for (const zoneId of ['1', "1'", '2', '3']) {
+        expect(
+          sumArea(pieces, zoneId),
+          `${shape.length}x${shape.width} h=${shape.eave} zone ${zoneId}`
+        ).toBeCloseTo(sumArea(ref.pieces, zoneId), 6);
+      }
+    }
+  });
+
+  it('two tall sections within 10 ft are one tall roof: conserved area, no Zone 1\'', () => {
+    const combined = computeSteppedRoofZones(offsetStep(95, 100), 'boundingRect');
+    expect(combined.treatment).toBe('combined');
+    expect(combined.regions[0]!.regime.regime).toBe('tall');
+    expect(totalArea(combined.pieces)).toBeCloseTo(100 * 80 + 60 * 50);
+    expect(combined.pieces.some((p) => p.zoneId === "1'")).toBe(false);
+    // Union is 160 x 80: a = 8, and the band is that deep on a free edge.
+    expect(combined.regions[0]!.dEdge).toBeCloseTo(8);
+    expect(zoneAt(combined.pieces, 50, 4)).toBe('2');
+    expect(zoneAt(combined.pieces, 50, 12)).toBe('1');
   });
 });
 

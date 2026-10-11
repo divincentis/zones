@@ -138,9 +138,76 @@ describe('computeSteepRoofZones — pitch band boundaries (7, 27, 45 degrees)', 
     expect(computeSteepRoofZones(building, 'boundingRect').pitchBand).toBe('27-45');
   });
 
-  it('pitch above 45 is rejected (no source figure yet)', () => {
+  it('pitch just above 45 is zoned as wall construction (Fig 3.4.6a)', () => {
     const building = gableRoofBuilding({ ...base, pitchDegrees: 45.0001 });
-    expect(() => computeSteepRoofZones(building, 'boundingRect')).toThrow(/45°/);
+    const result = computeSteepRoofZones(building, 'boundingRect');
+    expect(result.pitchBand).toBe('45+');
+    expect(result.source).toBe('FM Global 1-28 Fig 3.4.6a');
+  });
+
+  it('a vertical "roof" is rejected', () => {
+    const building = gableRoofBuilding({ ...base, pitchDegrees: 90 });
+    expect(() => computeSteepRoofZones(building, 'boundingRect')).toThrow(/90°/);
+  });
+});
+
+describe('computeSteepRoofZones — Fig 3.4.6a (theta > 45), roof treated as wall Zones 4 and 5', () => {
+  // length=100 (rake extent), width=40 (perpExtent), eave 10, pitch 60.
+  // Rise = 20*tan(60) = 34.64 -> h = 27.32 -> a = min(4, 10.9) = 4.
+  //   Zone 5 up each rake: 4 wide, full 40 across        -> 2 * 160 = 320
+  //   Zone 5 at the peak: a vertical drop of a = 4 is a plan run of
+  //     4/tan(60) = 2.309 each side of the ridge, over the 92 ft between
+  //     the rake strips                                  -> 92 * 4.619 = 424.9
+  //   Zone 4: the rest                                   -> 4000 - 744.9
+  const building = gableRoofBuilding({ length: 100, width: 40, eaveHeight: 10, pitchDegrees: 60, ridgeAlong: 'length' });
+  const result = computeSteepRoofZones(building, 'boundingRect');
+  const tan = Math.tan((60 * Math.PI) / 180);
+
+  it('carries only wall zone ids', () => {
+    expect(new Set(result.pieces.map((p) => p.zoneId))).toEqual(new Set(['4', '5']));
+  });
+
+  it('the peak band is a vertical drop of a, reported with its plan run', () => {
+    expect(result.ridgeBandDrop).toBeCloseTo(4);
+    expect(result.ridgeOrEaveBand).toBeCloseTo(4 / tan);
+    expect(result.rakeBand).toBeCloseTo(4);
+  });
+
+  it('zone areas match the hand calculation', () => {
+    const peakBand = 92 * 2 * (4 / tan);
+    expect(sumArea(result.pieces, '5')).toBeCloseTo(320 + peakBand);
+    expect(sumArea(result.pieces, '4')).toBeCloseTo(4000 - 320 - peakBand);
+  });
+
+  it('the slope factor turns plan area into surface area: 1/cos(60) = 2', () => {
+    expect(result.slopeFactor).toBeCloseTo(2);
+  });
+
+  it('is not board-rounded, so the rake strip stays in line with the wall strip below it', () => {
+    const rounded = computeSteepRoofZones(building, 'boundingRect', 8);
+    expect(sumArea(rounded.pieces, '5')).toBeCloseTo(sumArea(result.pieces, '5'));
+  });
+
+  it('the peak band never outruns the roof: on a narrow building it takes the whole slope', () => {
+    // width 3 -> a is the 3 ft floor, but the half-span is 1.5 and the roof
+    // only rises 1.5*tan(60) = 2.6 ft, less than a. The band stops at the
+    // eave rather than running past it, and no Zone 4 is left.
+    const narrow = gableRoofBuilding({ length: 100, width: 3, eaveHeight: 10, pitchDegrees: 60, ridgeAlong: 'length' });
+    const r = computeSteepRoofZones(narrow, 'boundingRect');
+    expect(sumArea(r.pieces, '4')).toBe(0);
+    expect(sumArea(r.pieces, '5')).toBeCloseTo(300);
+    expect(r.ridgeBandDrop).toBeCloseTo(1.5 * tan);
+  });
+});
+
+describe('computeSteepRoofZones — slope factor', () => {
+  it('is 1/cos(pitch) in every band', () => {
+    for (const pitchDegrees of [20, 35, 60]) {
+      const building = gableRoofBuilding({ length: 100, width: 40, eaveHeight: 10, pitchDegrees, ridgeAlong: 'length' });
+      expect(computeSteepRoofZones(building, 'boundingRect').slopeFactor).toBeCloseTo(
+        1 / Math.cos((pitchDegrees * Math.PI) / 180)
+      );
+    }
   });
 });
 

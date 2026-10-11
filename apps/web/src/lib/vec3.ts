@@ -92,18 +92,11 @@ export function monoslopeRoofPieceCorners(
   );
 }
 
-/** Gable-end wall infill triangle: two base corners at eaveHeight, apex at the ridge point on that gable end. Not a wind zone — pure envelope fill so the 3D view doesn't show through the roof. */
-export function gableEndTriangle(
-  start: Vec2,
-  end: Vec2,
-  eaveHeight: number,
-  ridgePoint: Vec2,
-  ridgeHeight: number
-): Vec3[] {
-  return [planToWorld(start, eaveHeight), planToWorld(end, eaveHeight), planToWorld(ridgePoint, ridgeHeight)];
-}
-
-/** World-space quad corners for a wall zone panel, given the footprint edge it sits on. */
+/**
+ * World-space quad corners for a wall zone piece, given the footprint edge it
+ * sits on. The sides are vertical but the base and top need not be level: a
+ * gable end's pieces slope up to the ridge, and a rake band's base slopes too.
+ */
 export function wallPieceCorners(piece: WallZonePiece, edgeStart: Vec2, edgeEnd: Vec2): Vec3[] {
   const dx = edgeEnd[0] - edgeStart[0];
   const dy = edgeEnd[1] - edgeStart[1];
@@ -118,9 +111,9 @@ export function wallPieceCorners(piece: WallZonePiece, edgeStart: Vec2, edgeEnd:
   ];
 
   return [
-    point(piece.alongMin, piece.heightMin),
-    point(piece.alongMax, piece.heightMin),
-    point(piece.alongMax, piece.heightMax),
-    point(piece.alongMin, piece.heightMax),
+    point(piece.alongMin, piece.baseAtMin),
+    point(piece.alongMax, piece.baseAtMax),
+    point(piece.alongMax, piece.topAtMax),
+    point(piece.alongMin, piece.topAtMin),
   ];
 }
