@@ -17,13 +17,18 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
-    // Fixed (non-hashed) output filenames: the deploy process deletes and
-    // re-uploads the whole zones/ folder each time, so hash-busting just
-    // means manually clearing old hashed files first. See docs/deploying.md.
+    // The entry files keep fixed names — index.js, index.css — so index.html
+    // never changes and a deploy is always "the same three files, newer".
+    // Chunks loaded later (the 3D view, the PDF writer) are hashed instead:
+    // they are fetched by an index.js that may be a few minutes older or
+    // newer than the copy of the chunk a browser has cached, and under a
+    // fixed name the two could be from different builds. A hashed name can
+    // only ever be the chunk that index.js was built with.
+    // scripts/deploy.sh rsyncs with --delete, so old hashes do not pile up.
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].js',
-        chunkFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name].[ext]',
       },
     },

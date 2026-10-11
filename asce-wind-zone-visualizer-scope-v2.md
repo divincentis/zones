@@ -411,3 +411,18 @@ A review of the interface found it reading in places as the engine's own notes r
 - Areas are unaffected: they are computed from the exact figures and shown in square feet.
 
 Not taken on from the same review: the load time (a blank page until a 1.6 MB script arrives), the 3D view's labels and grid, and the styling of Export PDF.
+
+### 10.14 Update — 2026-10-11: The page arrives in pieces, lightest first
+
+The app was one 1.6 MB script, and the page was blank until all of it had arrived — about four seconds on a 4 Mbit connection in a local test.
+
+- **The 3D view is its own chunk.** three.js and its helpers are over half the weight and nothing a visitor needs first: the form, the figures and the plan all work without them. `App.tsx` asks for the chunk as its own script starts, so it downloads alongside rather than after, and until it lands **the plan stands in for the 3D view** — the same building, drawn by code already on the page. The entry script went from 1,635 kB to 279 kB (89 kB compressed).
+- **The PDF writer is fetched when Export is pressed**, not before.
+- **Something is on the page at once**: `index.html` carries a small placeholder inside `#root`, replaced when the app mounts.
+- **If the 3D chunk does not arrive** — a dropped connection, or a page left open across a deploy — an error boundary says so and points at 2D, where it used to take the whole app with it.
+- **Chunk names are hashed; entry names are not** (`vite.config.ts`). Fixed names were chosen in September because the build was uploaded by hand. They are kept for `index.js` and `index.css`, so `index.html` still never changes, but a chunk fetched later by an `index.js` that may be minutes older or newer than the cached copy must not be able to come from a different build.
+- The page now has a description, a theme colour and the site's icon.
+
+Same test after: placeholder at 0.2 s, usable form and figures at 1.6 s, 3D view at 3.2 s.
+
+**Controls, from the same review:** Export PDF is the primary button, apart from the view switch, and reports "Preparing…" and "PDF saved"; the 3D/2D switch says which is pressed; length fields step a foot with the arrow keys, ten with Shift, as they did before they became text fields.
