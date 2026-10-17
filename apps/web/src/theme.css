@@ -546,6 +546,8 @@ button {
   color: var(--text-primary);
   width: min(680px, calc(100vw - 20px));
   max-height: calc(100vh - 20px);
+  /* What is visible: on a phone 100vh counts the address bar as screen, and cuts the dialog off. */
+  max-height: calc(100dvh - 20px);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
 }
 
@@ -557,6 +559,8 @@ button {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 20px);
+  /* What is visible: on a phone 100vh counts the address bar as screen, and cuts the dialog off. */
+  max-height: calc(100dvh - 20px);
 }
 
 .help-head {
