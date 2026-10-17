@@ -338,6 +338,10 @@ button {
 .view-export {
   display: flex;
   align-items: center;
+  /* Export PDF and Help side by side, with Help dropping below on a phone
+     rather than running off the edge of the screen. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   color: var(--text-secondary);
   font-size: 12px;
@@ -530,4 +534,95 @@ button {
     min-height: 36px;
     font-size: 14px;
   }
+}
+
+/* Help. A native modal <dialog>, styled the way every other zbCAD tool's Help
+   is: a fixed header and footer with the text scrolling between them. */
+.help-dialog {
+  border: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  width: min(680px, calc(100vw - 20px));
+  max-height: calc(100vh - 20px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.help-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.help-dialog form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 20px);
+}
+
+.help-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-head h2 {
+  margin: 0;
+  font-size: 16px;
+  outline: none;
+}
+
+.help-x {
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.help-body {
+  padding: 4px 20px 12px;
+  overflow: auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.help-body h3 {
+  margin: 16px 0 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.help-body p,
+.help-body ul {
+  margin: 0 0 8px;
+}
+
+.help-body ul {
+  padding-left: 18px;
+}
+
+.help-body li {
+  margin-bottom: 4px;
+}
+
+.help-about {
+  font-size: 14.5px;
+  margin-top: 12px !important;
+}
+
+.help-fine {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.help-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
 }

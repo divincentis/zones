@@ -3,6 +3,7 @@ import { BuildingForm } from './components/BuildingForm';
 import { PlanView2D } from './components/PlanView2D';
 import { AssumptionsPanel } from './components/AssumptionsPanel';
 import { DisclaimerModal } from './components/DisclaimerModal';
+import { HelpModal } from './components/HelpModal';
 import { ProjectBar } from './components/ProjectBar';
 import { computeZones, type FormState } from './lib/buildModel';
 import type { StandardView, ViewRequest } from './components/Scene3D';
@@ -94,6 +95,7 @@ export function App() {
   const [boardSize, setBoardSize] = useState<number | null>(initial.project.boardSize);
   const [units, setUnits] = useState<LengthUnits>(initial.project.units);
   const [disclaimerAcknowledged, setDisclaimerAcknowledged] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [exporting, setExporting] = useState<ExportState>('idle');
   // How the 3D view is looked at — not part of the building, so not saved with it.
   const [showLabels, setShowLabels] = useState(true);
@@ -119,6 +121,17 @@ export function App() {
     setBoardSize(project.boardSize);
     setUnits(project.units);
   };
+
+  // F1 is blocked rather than bound, as on every zbCAD tool: an accidental press
+  // should cost nothing, and left alone Chrome opens its own help in a new tab.
+  // Help is the button over the view.
+  useEffect(() => {
+    const blockF1 = (e: KeyboardEvent) => {
+      if (e.key === 'F1') e.preventDefault();
+    };
+    window.addEventListener('keydown', blockF1);
+    return () => window.removeEventListener('keydown', blockF1);
+  }, []);
 
   // Its area is stale the moment the building changes.
   useEffect(() => setTouched(null), [outcome]);
@@ -149,6 +162,7 @@ export function App() {
       {!disclaimerAcknowledged && (
         <DisclaimerModal onAcknowledge={() => setDisclaimerAcknowledged(true)} />
       )}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
       <aside className="app-panel app-inputs" data-active={panel === 'inputs'}>
         <h1 style={{ fontSize: 15, margin: '0 0 4px' }}>
           <a href="/" className="brand-link">
@@ -214,25 +228,30 @@ export function App() {
               </div>
             )}
           </div>
-          {outcome.ok && (
-            <div className="view-export">
-              <span role="status">
-                {exporting === 'done'
-                  ? 'PDF saved'
-                  : exporting === 'failed'
-                    ? 'The PDF could not be made — reload and try again'
-                    : ''}
-              </span>
-              <button
-                type="button"
-                className="view-button view-button-primary"
-                onClick={exportPdf}
-                disabled={exporting === 'working' || (view === '3d' && !canvasEl)}
-              >
-                {exporting === 'working' ? 'Preparing…' : 'Export PDF'}
-              </button>
-            </div>
-          )}
+          <div className="view-export">
+            {outcome.ok && (
+              <>
+                <span role="status">
+                  {exporting === 'done'
+                    ? 'PDF saved'
+                    : exporting === 'failed'
+                      ? 'The PDF could not be made — reload and try again'
+                      : ''}
+                </span>
+                <button
+                  type="button"
+                  className="view-button view-button-primary"
+                  onClick={exportPdf}
+                  disabled={exporting === 'working' || (view === '3d' && !canvasEl)}
+                >
+                  {exporting === 'working' ? 'Preparing…' : 'Export PDF'}
+                </button>
+              </>
+            )}
+            <button type="button" className="view-button" onClick={() => setHelpOpen(true)}>
+              Help
+            </button>
+          </div>
         </div>
 
         {outcome.ok ? (
